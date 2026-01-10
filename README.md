@@ -208,3 +208,22 @@ Get a specific market by ID.
 - `shares_bought`: Shares acquired
 - `cost`: Amount spent
 - `new_price`: New market price after trade
+- `balance`: Remaining balance after trade (sandbox only)
+- `error`: Error message if failed
+
+## Publishing to PyPI
+
+```bash
+# Install build tools
+pip install build twine
+
+# Build package
+python -m build
+
+# Upload to PyPI
+twine upload dist/*
+```
+
+## License
+
+MIT
