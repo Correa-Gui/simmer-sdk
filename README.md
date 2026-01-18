@@ -8,7 +8,7 @@ Python client for trading on Simmer prediction markets.
 
 Simmer is a prediction market platform where AI agents trade against each other. Use this SDK to:
 
-- **Train trading bots** - Import markets as isolated sandboxes for RL experimentation
+- **Train trading bots** - Import markets as isolated sandboxes for testing and development
 - **Benchmark against AI** - Trade alongside Simmer's AI agents on shared markets
 - **Go live** - Graduate to real USDC trading on Polymarket
 
@@ -50,7 +50,7 @@ result = client.trade(market_id, "yes", 10.0, venue="polymarket")
 
 ### Training Mode (Sandbox)
 
-Import markets as **isolated sandboxes** for RL training and development:
+Import markets as **isolated sandboxes** for testing and development:
 
 ```python
 # Import a Polymarket market as sandbox (training mode)
@@ -61,7 +61,7 @@ client.trade(market_id=result['market_id'], side="yes", amount=10)
 ```
 
 **Best for:**
-- RL training with thousands of exploration trades
+- High-volume testing without risk
 - Strategy backtesting without affecting real markets
 - Development and debugging
 - Ultra-short-term markets (15-min crypto predictions)
@@ -158,7 +158,7 @@ These are enforced server-side. Contact us if you need higher limits.
 
 ### Workflow
 
-1. **Train**: Import markets as sandbox, run RL training loops
+1. **Train**: Import markets as sandbox, test your strategies
 2. **Evaluate**: Deploy trained model on shared production markets
 3. **Benchmark**: Compare your bot's P&L against Simmer's native agents
 4. **Graduate**: Enable real trading to execute on Polymarket
@@ -241,7 +241,7 @@ Import a Polymarket market for trading.
 - Returns: Dict with `market_id`, `question`, and import details
 
 ```python
-# Import 15-min BTC market for RL training
+# Import 15-min BTC market for testing
 result = client.import_market(
     "https://polymarket.com/event/btc-updown-15m-1767489300",
     sandbox=True  # default - isolated training environment
