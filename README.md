@@ -46,6 +46,8 @@ client = SimmerClient(api_key="sk_live_...", venue="polymarket")
 result = client.trade(market_id, "yes", 10.0, venue="polymarket")
 ```
 
+> **Note:** Sandbox uses LMSR (automated market maker) while Polymarket uses a CLOB (orderbook). The SDK abstracts this, but execution differs: sandbox trades are instant with predictable price impact, while real trades depend on orderbook liquidity and may experience slippage.
+
 ## Trading Modes
 
 ### Training Mode (Sandbox)
