@@ -43,11 +43,20 @@ class TradeResult:
     trade_id: Optional[str] = None
     market_id: str = ""
     side: str = ""
-    shares_bought: float = 0
+    shares_bought: float = 0  # Actual shares filled (for Polymarket, assumes full fill if matched)
+    shares_requested: float = 0  # Shares requested (for partial fill detection)
+    order_status: Optional[str] = None  # Polymarket order status: "matched", "live", "delayed"
     cost: float = 0
     new_price: float = 0
-    balance: Optional[float] = None  # Remaining balance after trade
+    balance: Optional[float] = None  # Remaining balance after trade (sandbox only)
     error: Optional[str] = None
+
+    @property
+    def fully_filled(self) -> bool:
+        """Check if order was fully filled (shares_bought >= shares_requested)."""
+        if self.shares_requested <= 0:
+            return self.success
+        return self.shares_bought >= self.shares_requested
 
 
 @dataclass
@@ -269,6 +278,8 @@ class SimmerClient:
             market_id=data.get("market_id", market_id),
             side=data.get("side", side),
             shares_bought=data.get("shares_bought", 0),
+            shares_requested=data.get("shares_requested", 0),
+            order_status=data.get("order_status"),
             cost=data.get("cost", 0),
             new_price=data.get("new_price", 0),
             balance=balance,

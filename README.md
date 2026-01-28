@@ -380,11 +380,23 @@ Get a specific market by ID.
 
 ### TradeResult
 - `success`: Whether trade succeeded
-- `shares_bought`: Shares acquired
+- `shares_bought`: Shares actually filled
+- `shares_requested`: Shares requested (for partial fill detection)
+- `order_status`: Polymarket order status (`"matched"`, `"live"`, `"delayed"`)
+- `fully_filled`: Property - `True` if `shares_bought >= shares_requested`
 - `cost`: Amount spent
 - `new_price`: New market price after trade
 - `balance`: Remaining balance after trade (sandbox only)
 - `error`: Error message if failed
+
+**Checking for partial fills:**
+```python
+result = client.trade(market_id, "yes", 10.0, venue="polymarket")
+if result.fully_filled:
+    print(f"Got all {result.shares_bought} shares")
+else:
+    print(f"Partial fill: {result.shares_bought}/{result.shares_requested}")
+```
 
 ## Error Reference
 
