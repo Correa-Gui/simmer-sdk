@@ -296,12 +296,17 @@ List available markets.
 - `import_source`: Filter by source (`polymarket`, `kalshi`, or `None` for all)
 - Returns: List of `Market` objects
 
-#### `trade(market_id, side, amount, venue, reasoning, source)`
+#### `trade(market_id, side, amount, venue, order_type, reasoning, source)`
 Execute a trade.
 - `market_id`: Market to trade on
 - `side`: `yes` or `no`
 - `amount`: Dollar amount to spend
 - `venue`: Override client's default venue for this trade (optional)
+- `order_type`: Order type for Polymarket trades (default: `"FAK"`)
+  - `"FAK"`: Fill And Kill - fill what you can immediately, cancel rest (recommended for bots)
+  - `"FOK"`: Fill Or Kill - fill 100% immediately or cancel entirely
+  - `"GTC"`: Good Till Cancelled - limit order, stays on book until filled
+  - `"GTD"`: Good Till Date - limit order with expiry
 - `reasoning`: Public explanation for the trade (optional)
 - `source`: Source tag for tracking, e.g., `"sdk:weather"` (optional)
 - Returns: `TradeResult` with execution details

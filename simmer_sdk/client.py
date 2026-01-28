@@ -90,6 +90,8 @@ class SimmerClient:
 
     # Valid venue options
     VENUES = ("sandbox", "polymarket", "shadow")
+    # Valid order types for Polymarket CLOB
+    ORDER_TYPES = ("GTC", "GTD", "FOK", "FAK")
 
     def __init__(
         self,
@@ -185,6 +187,7 @@ class SimmerClient:
         side: str,
         amount: float,
         venue: Optional[str] = None,
+        order_type: str = "FAK",
         reasoning: Optional[str] = None,
         source: Optional[str] = None
     ) -> TradeResult:
@@ -200,6 +203,12 @@ class SimmerClient:
                 - "polymarket": Real Polymarket CLOB, USDC (requires linked wallet)
                 - "shadow": Paper trading against real prices (coming soon)
                 - None: Use client's default venue
+            order_type: Order type for Polymarket trades (default: "FAK").
+                - "FAK": Fill And Kill - fill what you can immediately, cancel rest (recommended for bots)
+                - "FOK": Fill Or Kill - fill 100% immediately or cancel entirely
+                - "GTC": Good Till Cancelled - limit order, stays on book until filled
+                - "GTD": Good Till Date - limit order with expiry
+                Only applies to venue="polymarket". Ignored for sandbox.
             reasoning: Optional explanation for the trade. This will be displayed
                 publicly on the market's trade history page, allowing spectators
                 to see why your bot made this trade.
@@ -216,6 +225,9 @@ class SimmerClient:
             # Override venue for single trade
             result = client.trade(market_id, "yes", 10.0, venue="polymarket")
 
+            # Use FOK for all-or-nothing execution
+            result = client.trade(market_id, "yes", 10.0, venue="polymarket", order_type="FOK")
+
             # Include reasoning and source tag
             result = client.trade(
                 market_id, "yes", 10.0,
@@ -226,12 +238,15 @@ class SimmerClient:
         effective_venue = venue or self.venue
         if effective_venue not in self.VENUES:
             raise ValueError(f"Invalid venue '{effective_venue}'. Must be one of: {self.VENUES}")
+        if order_type not in self.ORDER_TYPES:
+            raise ValueError(f"Invalid order_type '{order_type}'. Must be one of: {self.ORDER_TYPES}")
 
         payload = {
             "market_id": market_id,
             "side": side,
             "amount": amount,
-            "venue": effective_venue
+            "venue": effective_venue,
+            "order_type": order_type
         }
         if reasoning:
             payload["reasoning"] = reasoning
