@@ -537,3 +537,106 @@ class SimmerClient:
         """
         data = self._request("GET", f"/api/sdk/markets/{market_id}/history")
         return data.get("points", []) if data else []
+
+    # ==========================================
+    # PRICE ALERTS
+    # ==========================================
+
+    def create_alert(
+        self,
+        market_id: str,
+        side: str,
+        condition: str,
+        threshold: float,
+        webhook_url: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a price alert.
+
+        Alerts trigger when market price crosses the specified threshold.
+        Unlike risk monitors, alerts don't require a position.
+
+        Args:
+            market_id: Market to monitor
+            side: Which price to monitor ('yes' or 'no')
+            condition: Trigger condition:
+                - 'above': Trigger when price >= threshold
+                - 'below': Trigger when price <= threshold
+                - 'crosses_above': Trigger when price crosses from below to above threshold
+                - 'crosses_below': Trigger when price crosses from above to below threshold
+            threshold: Price threshold (0-1)
+            webhook_url: Optional HTTPS URL to receive webhook notification
+
+        Returns:
+            Dict containing alert details (id, market_id, side, condition, threshold, etc.)
+
+        Example:
+            # Alert when YES price drops below 30%
+            alert = client.create_alert(
+                market_id="...",
+                side="yes",
+                condition="below",
+                threshold=0.30,
+                webhook_url="https://my-server.com/webhook"
+            )
+            print(f"Created alert {alert['id']}")
+        """
+        return self._request("POST", "/api/sdk/alerts", json={
+            "market_id": market_id,
+            "side": side,
+            "condition": condition,
+            "threshold": threshold,
+            "webhook_url": webhook_url
+        })
+
+    def get_alerts(self, include_triggered: bool = False) -> List[Dict[str, Any]]:
+        """
+        List alerts.
+
+        Args:
+            include_triggered: If True, include alerts that have already triggered.
+                              Default is False (only active alerts).
+
+        Returns:
+            List of alert dicts with id, market_id, side, condition, threshold, etc.
+
+        Example:
+            alerts = client.get_alerts()
+            print(f"You have {len(alerts)} active alerts")
+        """
+        params = {"include_triggered": include_triggered}
+        data = self._request("GET", "/api/sdk/alerts", params=params)
+        return data.get("alerts", [])
+
+    def delete_alert(self, alert_id: str) -> Dict[str, Any]:
+        """
+        Delete an alert.
+
+        Args:
+            alert_id: ID of the alert to delete
+
+        Returns:
+            Dict with success status
+
+        Example:
+            client.delete_alert("abc123...")
+        """
+        return self._request("DELETE", f"/api/sdk/alerts/{alert_id}")
+
+    def get_triggered_alerts(self, hours: int = 24) -> List[Dict[str, Any]]:
+        """
+        Get alerts that triggered within the last N hours.
+
+        Args:
+            hours: Look back period in hours (default: 24, max: 168 = 1 week)
+
+        Returns:
+            List of triggered alert dicts
+
+        Example:
+            triggered = client.get_triggered_alerts(hours=48)
+            for alert in triggered:
+                print(f"Alert {alert['id']} triggered at {alert['triggered_at']}")
+        """
+        data = self._request("GET", "/api/sdk/alerts/triggered", params={"hours": hours})
+        return data.get("alerts", [])
