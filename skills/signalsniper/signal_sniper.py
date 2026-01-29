@@ -38,6 +38,18 @@ try:
 except ImportError:
     _USE_DEFUSEDXML = False
 
+# Optional: Trade Journal integration for tracking
+try:
+    from tradejournal import log_trade
+    JOURNAL_AVAILABLE = True
+except ImportError:
+    JOURNAL_AVAILABLE = False
+    def log_trade(*args, **kwargs):
+        pass  # No-op if tradejournal not installed
+
+# Source tag for tracking
+TRADE_SOURCE = "sdk:signalsniper"
+
 # Configuration from environment
 API_KEY = os.environ.get("SIMMER_API_KEY", "")
 API_BASE = os.environ.get("SIMMER_API_BASE", "https://api.simmer.markets")
@@ -338,8 +350,18 @@ def set_risk_monitor(market_id: str, side: str,
     return result
 
 
-def execute_trade(market_id: str, side: str, amount: float, price: float = None, source: str = "sdk:signalsniper") -> Dict:
-    """Execute trade via SDK with 5-share minimum check."""
+def execute_trade(
+    market_id: str,
+    side: str,
+    amount: float,
+    price: float = None,
+    source: str = None,
+    thesis: str = None,
+    confidence: float = None,
+) -> Dict:
+    """Execute trade via SDK with 5-share minimum check and journal logging."""
+    source = source or TRADE_SOURCE
+
     # Check Polymarket minimum shares requirement
     if price and price > 0:
         shares = amount / price
@@ -348,8 +370,8 @@ def execute_trade(market_id: str, side: str, amount: float, price: float = None,
                 "success": False,
                 "error": f"Position size ${amount:.2f} too small for {MIN_SHARES_PER_ORDER} shares at ${price:.2f} (would be {shares:.1f} shares)"
             }
-    
-    return sdk_request("POST", "/api/sdk/trade", {
+
+    result = sdk_request("POST", "/api/sdk/trade", {
         "market_id": market_id,
         "side": side,
         "action": "buy",
@@ -357,6 +379,19 @@ def execute_trade(market_id: str, side: str, amount: float, price: float = None,
         "venue": "polymarket",
         "source": source,
     })
+
+    # Log to journal if successful
+    if result.get("success") and JOURNAL_AVAILABLE:
+        trade_id = result.get("trade_id")
+        if trade_id:
+            log_trade(
+                trade_id=trade_id,
+                source=source,
+                thesis=thesis,
+                confidence=confidence,
+            )
+
+    return result
 
 
 def check_safeguards(context: Dict) -> Tuple[bool, List[str]]:

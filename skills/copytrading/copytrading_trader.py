@@ -32,6 +32,18 @@ from datetime import datetime
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
+# Optional: Trade Journal integration for tracking
+try:
+    from tradejournal import log_trade
+    JOURNAL_AVAILABLE = True
+except ImportError:
+    JOURNAL_AVAILABLE = False
+    def log_trade(*args, **kwargs):
+        pass  # No-op if tradejournal not installed
+
+# Source tag for tracking
+TRADE_SOURCE = "sdk:copytrading"
+
 
 # =============================================================================
 # Configuration
@@ -339,15 +351,33 @@ def run_copytrading(wallets: list, top_n: int = None, max_usd: float = 50.0, dry
         print("\n💡 Remove --dry-run to execute trades")
     elif trades_executed > 0:
         print(f"\n✅ Successfully mirrored positions!")
-        
-        # Set risk monitors for executed BUY trades
+
+        # Log successful trades to journal and set risk monitors
         risk_monitors_set = 0
         risk_monitor_errors = 0
         for t in trades:
-            if t.get('success') and t.get('action') == 'buy':
+            if t.get('success'):
+                trade_id = t.get('trade_id')
+                action = t.get('action', 'buy')
                 market_id = t.get('market_id')
                 side = t.get('side', 'yes')
-                if market_id:
+                shares = t.get('shares', 0)
+                price = t.get('estimated_price', 0)
+                title = t.get('market_title', 'Unknown')
+
+                # Log trade context for journal
+                if trade_id and JOURNAL_AVAILABLE:
+                    log_trade(
+                        trade_id=trade_id,
+                        source=TRADE_SOURCE,
+                        thesis=f"Copytrading: {action.upper()} {shares:.1f} {side.upper()} "
+                               f"@ ${price:.3f} to mirror whale positions",
+                        action=action,
+                        wallets_count=len(wallets),
+                    )
+
+                # Set risk monitors for BUY trades
+                if action == 'buy' and market_id:
                     risk_result = set_risk_monitor(market_id, side,
                                                    stop_loss_pct=0.25, take_profit_pct=0.50)
                     if risk_result and risk_result.get('error'):

@@ -25,6 +25,15 @@ from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 
+# Optional: Trade Journal integration for tracking
+try:
+    from tradejournal import log_trade
+    JOURNAL_AVAILABLE = True
+except ImportError:
+    JOURNAL_AVAILABLE = False
+    def log_trade(*args, **kwargs):
+        pass  # No-op if tradejournal not installed
+
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -565,7 +574,17 @@ def check_exit_opportunities(api_key: str, dry_run: bool = False, use_safeguards
 
                 if result.get("success"):
                     exits_executed += 1
+                    trade_id = result.get("trade_id")
                     print(f"     ✅ Sold {shares:.1f} shares @ ${current_price:.2f}")
+
+                    # Log sell trade context for journal
+                    if trade_id and JOURNAL_AVAILABLE:
+                        log_trade(
+                            trade_id=trade_id,
+                            source=TRADE_SOURCE,
+                            thesis=f"Exit: price ${current_price:.2f} reached exit threshold ${EXIT_THRESHOLD:.2f}",
+                            action="sell",
+                        )
                 else:
                     error = result.get("error", "Unknown error")
                     print(f"     ❌ Sell failed: {error}")
@@ -755,10 +774,27 @@ def run_weather_strategy(dry_run: bool = False, positions_only: bool = False,
                 if result.get("success"):
                     trades_executed += 1
                     shares = result.get("shares_bought") or result.get("shares") or 0
+                    trade_id = result.get("trade_id")
                     print(f"  ✅ Bought {shares:.1f} shares @ ${price:.2f}")
-                    
+
+                    # Log trade context for journal
+                    if trade_id and JOURNAL_AVAILABLE:
+                        # Confidence based on price gap from threshold
+                        confidence = min(0.95, (ENTRY_THRESHOLD - price) / ENTRY_THRESHOLD + 0.5)
+                        log_trade(
+                            trade_id=trade_id,
+                            source=TRADE_SOURCE,
+                            thesis=f"NOAA forecasts {forecast_temp}°F for {location} on {date_str}, "
+                                   f"bucket '{outcome_name}' underpriced at ${price:.2f}",
+                            confidence=round(confidence, 2),
+                            location=location,
+                            forecast_temp=forecast_temp,
+                            target_date=date_str,
+                            metric=metric,
+                        )
+
                     # Set up risk monitor (stop-loss 25%, take-profit 60%)
-                    risk_result = set_risk_monitor(api_key, market_id, "yes", 
+                    risk_result = set_risk_monitor(api_key, market_id, "yes",
                                                    stop_loss_pct=0.25, take_profit_pct=0.60)
                     if risk_result and risk_result.get("success"):
                         print(f"  🛡️  Risk monitor set: SL -25% / TP +60%")
