@@ -1,7 +1,7 @@
 ---
 name: simmer-signalsniper
 description: Snipe Polymarket opportunities from your own signal sources. Monitors RSS feeds with Trading Agent-grade safeguards.
-metadata: {"clawdbot":{"emoji":"🎯","requires":{"env":["SIMMER_API_KEY"]},"cron":"*/15 * * * *"}}
+metadata: {"clawdbot":{"emoji":"🎯","requires":{"env":["SIMMER_API_KEY"]},"cron":"0 * * * *"}}
 authors:
   - Simmer (@simmer_markets)
 ---
