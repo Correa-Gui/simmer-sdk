@@ -142,6 +142,18 @@ def fetch_trades(limit: int = DEFAULT_FETCH_LIMIT, offset: int = 0) -> Dict:
     })
 
 
+def fetch_markets_by_ids(market_ids: List[str]) -> Dict:
+    """Fetch market data for specific IDs (for outcome tracking)."""
+    if not market_ids:
+        return {"markets": []}
+    # API accepts comma-separated IDs, max 50
+    ids_param = ",".join(market_ids[:50])
+    return api_request("GET", "/api/sdk/markets", {
+        "ids": ids_param,
+        "include_analytics_only": "true"  # Include all markets
+    })
+
+
 # =============================================================================
 # Sync Logic
 # =============================================================================
@@ -203,6 +215,101 @@ def sync_trades(dry_run: bool = False) -> Dict[str, Any]:
         "total_local": len(data["trades"]),
         "total_api": total_available
     }
+
+
+def sync_outcomes(dry_run: bool = False) -> Dict[str, Any]:
+    """
+    Update outcomes for resolved markets.
+
+    Checks market status for all pending trades and updates P&L.
+    """
+    print("\n📓 Syncing market outcomes...")
+
+    data = load_trades()
+    trades = data["trades"]
+
+    # Find trades with pending outcomes
+    pending = [t for t in trades if not t.get("outcome", {}).get("resolved")]
+
+    if not pending:
+        print("  No pending trades to check")
+        return {"updated": 0}
+
+    print(f"  Checking {len(pending)} pending trades...")
+
+    # Get unique market IDs
+    market_ids = list(set(t["market_id"] for t in pending))
+
+    # Fetch market data in batches of 50
+    markets_by_id = {}
+    for i in range(0, len(market_ids), 50):
+        batch = market_ids[i:i+50]
+        response = fetch_markets_by_ids(batch)
+        for m in response.get("markets", []):
+            markets_by_id[m["id"]] = m
+
+    print(f"  Fetched data for {len(markets_by_id)} markets")
+
+    # Update outcomes
+    updated_count = 0
+    for trade in trades:
+        if trade.get("outcome", {}).get("resolved"):
+            continue  # Already resolved
+
+        market = markets_by_id.get(trade["market_id"])
+        if not market:
+            continue
+
+        if market.get("status") != "resolved":
+            continue  # Still pending
+
+        # Market is resolved - update outcome
+        outcome_yes_won = market.get("outcome")  # True = YES won, False = NO won
+
+        if outcome_yes_won is None:
+            continue  # No outcome data yet
+
+        trade_side = trade.get("side", "").lower()
+        was_correct = (trade_side == "yes" and outcome_yes_won) or \
+                      (trade_side == "no" and not outcome_yes_won)
+
+        # Calculate P&L
+        shares = trade.get("shares", 0)
+        cost = trade.get("cost", 0)
+
+        if was_correct:
+            # Won: shares pay out $1 each
+            pnl = shares - cost
+        else:
+            # Lost: shares worth $0
+            pnl = -cost
+
+        trade["outcome"] = {
+            "resolved": True,
+            "winning_side": "yes" if outcome_yes_won else "no",
+            "pnl_usd": round(pnl, 2),
+            "was_correct": was_correct,
+            "resolved_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        updated_count += 1
+
+        result_emoji = "✅" if was_correct else "❌"
+        print(f"  {result_emoji} {trade['market_question'][:40]}... "
+              f"({trade_side.upper()}) → ${pnl:+.2f}")
+
+    if dry_run:
+        print(f"  [DRY RUN] Would update {updated_count} trades")
+        return {"updated": updated_count, "dry_run": True}
+
+    if updated_count > 0:
+        data["metadata"]["last_outcome_sync"] = datetime.now(timezone.utc).isoformat()
+        save_trades(data)
+        print(f"  ✅ Updated {updated_count} trade outcomes")
+    else:
+        print("  No new outcomes to update")
+
+    return {"updated": updated_count}
 
 
 # =============================================================================
@@ -460,7 +567,7 @@ def main():
     elif args.history is not None:
         show_history(args.history)
     elif args.sync_outcomes:
-        print("⚠️  --sync-outcomes not yet implemented (Phase 2)")
+        sync_outcomes(dry_run=args.dry_run)
     elif args.report:
         generate_report(args.report)
     elif args.export:
