@@ -221,11 +221,13 @@ def fetch_rss(url: str) -> List[Dict[str, str]]:
         with urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
             content = response.read()
 
-        # Secure XML parsing - disable external entities
-        parser = ET.XMLParser()
-        # Disable entity expansion to prevent XXE attacks
-        parser.entity = {}
-        root = ET.fromstring(content, parser=parser)
+        # Secure XML parsing - use defusedxml if available, otherwise standard parsing
+        try:
+            import defusedxml.ElementTree as DefusedET
+            root = DefusedET.fromstring(content)
+        except ImportError:
+            # Fallback to standard parsing (RSS feeds from trusted sources)
+            root = ET.fromstring(content)
 
         # Handle both RSS and Atom feeds
         # RSS: channel/item
