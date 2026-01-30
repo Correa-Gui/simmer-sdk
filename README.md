@@ -202,7 +202,7 @@ total_pnl = client.get_total_pnl()
 print(f"Total P&L: ${total_pnl:.2f}")
 ```
 
-## MoltBot Skills
+## OpenClaw Skills
 
 Pre-built trading strategies in [skills/](./skills/):
 
@@ -212,11 +212,11 @@ Pre-built trading strategies in [skills/](./skills/):
 | [Copytrading](./skills/copytrading/) | Mirror positions from top Polymarket traders | Every 4h |
 | [Signal Sniper](./skills/signalsniper/) | Trade on breaking news from RSS feeds | Every 15m |
 
-Install via MoltHub:
+Install via ClawHub:
 ```bash
-molthub install simmer-weather
-molthub install simmer-copytrading
-molthub install simmer-signalsniper
+clawhub install simmer-weather
+clawhub install simmer-copytrading
+clawhub install simmer-signalsniper
 ```
 
 Skills require `SIMMER_API_KEY` from your dashboard.

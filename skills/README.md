@@ -1,6 +1,6 @@
-# MoltBot Skills
+# OpenClaw Skills
 
-Official trading skills for MoltBot, powered by the Simmer SDK.
+Official trading skills for OpenClaw, powered by the Simmer SDK.
 
 ## Available Skills
 
@@ -13,9 +13,9 @@ Official trading skills for MoltBot, powered by the Simmer SDK.
 ## Installation
 
 ```bash
-molthub install simmer-weather
-molthub install simmer-copytrading
-molthub install simmer-signalsniper
+clawhub install simmer-weather
+clawhub install simmer-copytrading
+clawhub install simmer-signalsniper
 ```
 
 ## Requirements
