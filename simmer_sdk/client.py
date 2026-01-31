@@ -101,12 +101,15 @@ class SimmerClient:
     VENUES = ("sandbox", "polymarket", "shadow")
     # Valid order types for Polymarket CLOB
     ORDER_TYPES = ("GTC", "GTD", "FOK", "FAK")
+    # Private key format: 0x + 64 hex characters
+    PRIVATE_KEY_LENGTH = 66
 
     def __init__(
         self,
         api_key: str,
         base_url: str = "https://api.simmer.markets",
-        venue: str = "sandbox"
+        venue: str = "sandbox",
+        private_key: Optional[str] = None
     ):
         """
         Initialize the Simmer client.
@@ -120,6 +123,15 @@ class SimmerClient:
                   (requires wallet linked in dashboard + real trading enabled)
                 - "shadow": Paper trading - executes on LMSR but tracks P&L against
                   real Polymarket prices (coming soon)
+            private_key: Optional wallet private key for external wallet trading.
+                When provided, orders are signed locally instead of server-side.
+                This enables trading with your own Polymarket wallet.
+
+                SECURITY WARNING:
+                - Never log or print the private key
+                - Never commit it to version control
+                - Use environment variables or secure secret management
+                - Ensure your bot runs in a secure environment
         """
         if venue not in self.VENUES:
             raise ValueError(f"Invalid venue '{venue}'. Must be one of: {self.VENUES}")
@@ -127,11 +139,45 @@ class SimmerClient:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.venue = venue
+        self._private_key = private_key  # Stored privately, never logged
+        self._wallet_address: Optional[str] = None
+
+        # Derive wallet address if private key provided
+        if private_key:
+            self._validate_and_set_wallet(private_key)
+
         self._session = requests.Session()
         self._session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         })
+
+    def _validate_and_set_wallet(self, private_key: str) -> None:
+        """Validate private key format and derive wallet address."""
+        if not private_key.startswith("0x"):
+            raise ValueError("Private key must start with '0x'")
+        if len(private_key) != self.PRIVATE_KEY_LENGTH:
+            raise ValueError("Invalid private key length")
+
+        try:
+            from .signing import get_wallet_address
+            self._wallet_address = get_wallet_address(private_key)
+        except ImportError as e:
+            # eth_account not installed - raise clear error
+            raise ImportError(
+                "External wallet requires eth_account package. "
+                "Install with: pip install eth-account"
+            ) from e
+
+    @property
+    def wallet_address(self) -> Optional[str]:
+        """Get the wallet address (only available when private_key is set)."""
+        return self._wallet_address
+
+    @property
+    def has_external_wallet(self) -> bool:
+        """Check if client is configured for external wallet trading."""
+        return self._private_key is not None
 
     def _request(
         self,
@@ -194,7 +240,9 @@ class SimmerClient:
         self,
         market_id: str,
         side: str,
-        amount: float,
+        amount: float = 0,
+        shares: float = 0,
+        action: str = "buy",
         venue: Optional[str] = None,
         order_type: str = "FAK",
         reasoning: Optional[str] = None,
@@ -206,7 +254,9 @@ class SimmerClient:
         Args:
             market_id: Market ID to trade on
             side: 'yes' or 'no'
-            amount: Dollar amount to spend
+            amount: Dollar amount to spend (for buys)
+            shares: Number of shares to sell (for sells)
+            action: 'buy' or 'sell' (default: 'buy')
             venue: Override client's default venue for this trade.
                 - "sandbox": Simmer LMSR, $SIM virtual currency
                 - "polymarket": Real Polymarket CLOB, USDC (requires linked wallet)
@@ -243,17 +293,36 @@ class SimmerClient:
                 reasoning="Strong bullish signal from sentiment analysis",
                 source="sdk:my-strategy"
             )
+
+            # External wallet trading (local signing)
+            client = SimmerClient(
+                api_key="sk_live_...",
+                venue="polymarket",
+                private_key="0x..."  # Your wallet's private key
+            )
+            result = client.trade(market_id, "yes", 10.0)  # Signs locally
         """
         effective_venue = venue or self.venue
         if effective_venue not in self.VENUES:
             raise ValueError(f"Invalid venue '{effective_venue}'. Must be one of: {self.VENUES}")
         if order_type not in self.ORDER_TYPES:
             raise ValueError(f"Invalid order_type '{order_type}'. Must be one of: {self.ORDER_TYPES}")
+        if action not in ("buy", "sell"):
+            raise ValueError(f"Invalid action '{action}'. Must be 'buy' or 'sell'")
+
+        # Validate amount/shares based on action
+        is_sell = action == "sell"
+        if is_sell and shares <= 0:
+            raise ValueError("shares required for sell orders")
+        if not is_sell and amount <= 0:
+            raise ValueError("amount required for buy orders")
 
         payload = {
             "market_id": market_id,
             "side": side,
             "amount": amount,
+            "shares": shares,
+            "action": action,
             "venue": effective_venue,
             "order_type": order_type
         }
@@ -261,6 +330,15 @@ class SimmerClient:
             payload["reasoning"] = reasoning
         if source:
             payload["source"] = source
+
+        # External wallet: sign locally and include signed_order
+        if self._private_key and effective_venue == "polymarket":
+            signed_order = self._build_signed_order(
+                market_id, side, amount if not is_sell else 0,
+                shares if is_sell else 0, action
+            )
+            if signed_order:
+                payload["signed_order"] = signed_order
 
         data = self._request(
             "POST",
@@ -640,3 +718,248 @@ class SimmerClient:
         """
         data = self._request("GET", "/api/sdk/alerts/triggered", params={"hours": hours})
         return data.get("alerts", [])
+
+    # ==========================================
+    # EXTERNAL WALLET SUPPORT
+    # ==========================================
+
+    def _build_signed_order(
+        self,
+        market_id: str,
+        side: str,
+        amount: float = 0,
+        shares: float = 0,
+        action: str = "buy"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Build and sign a Polymarket order locally.
+
+        Internal method used when private_key is set.
+
+        Args:
+            market_id: Market to trade on
+            side: 'yes' or 'no'
+            amount: Dollar amount (for buys)
+            shares: Number of shares (for sells)
+            action: 'buy' or 'sell'
+        """
+        if not self._private_key or not self._wallet_address:
+            return None
+
+        try:
+            from .signing import build_and_sign_order
+        except ImportError:
+            raise ImportError(
+                "Local signing requires py_order_utils. "
+                "Install with: pip install py-order-utils py-clob-client eth-account"
+            )
+
+        is_sell = action == "sell"
+
+        # Get market data to find token IDs and price
+        market_data = self._request("GET", f"/api/sdk/markets/{market_id}")
+        if not market_data:
+            raise ValueError(f"Market {market_id} not found")
+
+        # Get token ID based on side
+        if side.lower() == "yes":
+            token_id = market_data.get("polymarket_token_id")
+        else:
+            token_id = market_data.get("polymarket_no_token_id")
+
+        if not token_id:
+            raise ValueError(f"Market {market_id} does not have Polymarket token IDs")
+
+        # Get price - use external price for the side
+        if side.lower() == "yes":
+            price = market_data.get("external_price_yes") or 0.5
+        else:
+            external_yes = market_data.get("external_price_yes") or 0.5
+            price = 1.0 - external_yes
+
+        # Clamp price to valid range to avoid division issues
+        if price <= 0 or price >= 1:
+            price = 0.5  # Fallback to 50%
+
+        # Calculate size based on action
+        if is_sell:
+            size = shares  # Sell uses shares directly
+        else:
+            size = amount / price  # Buy calculates shares from amount
+
+        # Determine CLOB side
+        clob_side = "SELL" if is_sell else "BUY"
+
+        neg_risk = market_data.get("polymarket_neg_risk", False)
+
+        # Build and sign the order
+        signed = build_and_sign_order(
+            private_key=self._private_key,
+            wallet_address=self._wallet_address,
+            token_id=token_id,
+            side=clob_side,
+            price=price,
+            size=size,
+            neg_risk=neg_risk,
+            signature_type=0,  # EOA
+        )
+
+        return signed.to_dict()
+
+    def link_wallet(self, signature_type: int = 0) -> Dict[str, Any]:
+        """
+        Link an external wallet to your Simmer account.
+
+        This proves ownership of the wallet by signing a challenge message.
+        Once linked, you can trade using your own wallet instead of
+        Simmer-managed wallets.
+
+        Args:
+            signature_type: Signature type for the wallet.
+                - 0: EOA (standard wallet, default)
+                - 1: Polymarket proxy wallet
+                - 2: Gnosis Safe
+
+        Returns:
+            Dict with success status and wallet info
+
+        Raises:
+            ValueError: If no private_key is configured
+            Exception: If linking fails
+
+        Example:
+            client = SimmerClient(
+                api_key="sk_live_...",
+                private_key="0x..."
+            )
+            result = client.link_wallet()
+            if result["success"]:
+                print(f"Linked wallet: {result['wallet_address']}")
+        """
+        if not self._private_key or not self._wallet_address:
+            raise ValueError(
+                "private_key required for wallet linking. "
+                "Initialize client with private_key parameter."
+            )
+
+        if signature_type not in (0, 1, 2):
+            raise ValueError(
+                f"Invalid signature_type {signature_type}. "
+                "Must be 0 (EOA), 1 (Polymarket proxy), or 2 (Gnosis Safe)"
+            )
+
+        try:
+            from .signing import sign_message
+        except ImportError:
+            raise ImportError(
+                "Wallet linking requires eth_account. "
+                "Install with: pip install eth-account"
+            )
+
+        # Step 1: Request challenge nonce
+        challenge = self._request(
+            "GET",
+            "/api/sdk/wallet/link/challenge",
+            params={"address": self._wallet_address}
+        )
+
+        nonce = challenge.get("nonce")
+        message = challenge.get("message")
+
+        if not nonce or not message:
+            raise ValueError("Failed to get challenge from server")
+
+        # Step 2: Sign the challenge message
+        signature = sign_message(self._private_key, message)
+
+        # Step 3: Submit signed challenge
+        result = self._request(
+            "POST",
+            "/api/sdk/wallet/link",
+            json={
+                "address": self._wallet_address,
+                "signature": signature,
+                "nonce": nonce,
+                "signature_type": signature_type
+            }
+        )
+
+        return result
+
+    def check_approvals(self, address: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Check Polymarket token approvals for a wallet.
+
+        Polymarket requires several token approvals before trading.
+        This method checks the status of all required approvals.
+
+        Args:
+            address: Wallet address to check. Defaults to the configured
+                    wallet if private_key was provided.
+
+        Returns:
+            Dict containing:
+            - all_set: True if all approvals are in place
+            - usdc_approved: USDC.e approval status
+            - ctf_approved: CTF token approval status
+            - Individual spender approval details
+
+        Example:
+            approvals = client.check_approvals()
+            if not approvals["all_set"]:
+                print("Please set approvals in your Polymarket wallet")
+                print(f"Missing: {approvals}")
+        """
+        check_address = address or self._wallet_address
+        if not check_address:
+            raise ValueError(
+                "No wallet address provided. Either pass address parameter "
+                "or initialize client with private_key."
+            )
+
+        return self._request(
+            "GET",
+            f"/api/polymarket/allowances/{check_address}"
+        )
+
+    def ensure_approvals(self) -> Dict[str, Any]:
+        """
+        Check approvals and return transaction data for any missing ones.
+
+        Convenience method that combines check_approvals() with
+        get_missing_approval_transactions() from the approvals module.
+
+        Returns:
+            Dict containing:
+            - ready: True if all approvals are set
+            - missing_transactions: List of tx data for missing approvals
+            - guide: Human-readable status message
+
+        Raises:
+            ValueError: If no wallet is configured
+
+        Example:
+            result = client.ensure_approvals()
+            if not result["ready"]:
+                print(result["guide"])
+                for tx in result["missing_transactions"]:
+                    # Sign and send tx
+                    print(f"Send tx to {tx['to']}: {tx['description']}")
+        """
+        if not self._wallet_address:
+            raise ValueError(
+                "No wallet configured. Initialize client with private_key."
+            )
+
+        from .approvals import get_missing_approval_transactions, format_approval_guide
+
+        status = self.check_approvals()
+        missing_txs = get_missing_approval_transactions(status)
+        guide = format_approval_guide(status)
+
+        return {
+            "ready": status.get("all_set", False),
+            "missing_transactions": missing_txs,
+            "guide": guide,
+            "raw_status": status,
+        }

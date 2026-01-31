@@ -43,7 +43,7 @@ client = SimmerClient(api_key="sk_live_...", venue="sandbox")
 client = SimmerClient(api_key="sk_live_...", venue="polymarket")
 
 # Override venue for a single trade
-result = client.trade(market_id, "yes", 10.0, venue="polymarket")
+result = client.trade(market_id, side="yes", amount=10.0, venue="polymarket")
 ```
 
 > **Note:** Sandbox uses LMSR (automated market maker) while Polymarket uses a CLOB (orderbook). The SDK abstracts this, but execution differs: sandbox trades are instant with predictable price impact, while real trades depend on orderbook liquidity and may experience slippage.
@@ -158,6 +158,130 @@ result = client.trade(market_id="...", side="yes", amount=10.0)
 
 These are enforced server-side. Contact us if you need higher limits.
 
+## External Wallet Trading
+
+Trade with your **own Polymarket wallet** instead of a Simmer-managed wallet. Orders are signed locally by your clawbot and submitted through Simmer.
+
+### When to Use External Wallets
+
+| Feature | Simmer Wallet | External Wallet |
+|---------|---------------|-----------------|
+| Key management | Simmer holds keys | You hold keys |
+| Signing | Server-side | Local (your clawbot) |
+| Setup | One-click in dashboard | Link wallet + set approvals |
+| Use case | Most users | Advanced users, existing wallets |
+
+### Setup
+
+#### 1. Install Dependencies
+
+```bash
+pip install simmer-sdk eth-account py-order-utils py-clob-client
+```
+
+#### 2. Link Your Wallet
+
+```python
+from simmer_sdk import SimmerClient
+
+client = SimmerClient(
+    api_key="sk_live_...",
+    venue="polymarket",
+    private_key="0x..."  # Your wallet's private key
+)
+
+# Link wallet to your Simmer account (one-time)
+client.link_wallet()
+print(f"Linked: {client.wallet_address}")
+```
+
+#### 3. Set Polymarket Approvals
+
+Polymarket requires token approvals before trading. Check and set them:
+
+```python
+# Check current approval status
+result = client.ensure_approvals()
+
+if not result["ready"]:
+    print(result["guide"])  # Shows what's missing
+
+    # Get transaction data for missing approvals
+    for tx in result["missing_transactions"]:
+        print(f"Send tx to {tx['to']}: {tx['description']}")
+        # Sign and send each tx from your wallet
+```
+
+Or use the standalone helpers:
+
+```python
+from simmer_sdk import get_approval_transactions, get_missing_approval_transactions
+
+# Get all 6 approval transactions
+all_txs = get_approval_transactions()
+
+# Or just the missing ones
+approvals = client.check_approvals()
+missing_txs = get_missing_approval_transactions(approvals)
+```
+
+#### 4. Trade
+
+```python
+# Trades are signed locally, submitted through Simmer
+result = client.trade(market_id="...", side="yes", amount=10.0)
+```
+
+### Security Warnings
+
+> **Your private key is sensitive. Handle it carefully.**
+
+- **Never log or print** the private key
+- **Never commit** to version control (use `.env` files or secret managers)
+- **Never share** with anyone, including Simmer support
+- Key is held **in memory** during client lifetime
+- Ensure your **clawbot environment is secure**
+
+```python
+import os
+
+# Good: Load from environment
+client = SimmerClient(
+    api_key=os.environ["SIMMER_API_KEY"],
+    venue="polymarket",
+    private_key=os.environ["WALLET_PRIVATE_KEY"],  # Never hardcode
+)
+```
+
+### Signature Types
+
+Most wallets use EOA (type 0). If you have a special wallet:
+
+```python
+# EOA - standard wallet (default)
+client.link_wallet(signature_type=0)
+
+# Polymarket proxy wallet
+client.link_wallet(signature_type=1)
+
+# Gnosis Safe multisig
+client.link_wallet(signature_type=2)
+```
+
+### Selling Positions
+
+External wallets can sell positions acquired outside Simmer:
+
+```python
+# Sell 50 shares of YES
+result = client.trade(
+    market_id=market_id,
+    side="yes",
+    shares=50.0,
+    action="sell"
+)
+```
+
 ### Workflow
 
 1. **Train**: Import markets as sandbox, test your strategies
@@ -269,7 +393,9 @@ Track which strategy opened each position:
 
 ```python
 result = client.trade(
-    market_id, "yes", 10.0,
+    market_id=market_id,
+    side="yes",
+    amount=10.0,
     source="sdk:my-strategy"  # Tag for tracking
 )
 
@@ -282,13 +408,14 @@ my_positions = portfolio['by_source'].get('sdk:my-strategy', {})
 
 ### SimmerClient
 
-#### `__init__(api_key, base_url, venue)`
+#### `__init__(api_key, base_url, venue, private_key)`
 - `api_key`: Your SDK API key (starts with `sk_live_`)
 - `base_url`: API URL (default: `https://api.simmer.markets`)
 - `venue`: Trading venue (default: `sandbox`)
   - `sandbox`: Simmer LMSR with $SIM virtual currency
   - `polymarket`: Real Polymarket CLOB with USDC
   - `shadow`: Paper trading against real prices *(coming soon)*
+- `private_key`: Optional wallet private key for external wallet trading. When provided, orders are signed locally instead of server-side.
 
 #### `get_markets(status, import_source, limit)`
 List available markets.
@@ -296,11 +423,13 @@ List available markets.
 - `import_source`: Filter by source (`polymarket`, `kalshi`, or `None` for all)
 - Returns: List of `Market` objects
 
-#### `trade(market_id, side, amount, venue, order_type, reasoning, source)`
+#### `trade(market_id, side, amount, shares, action, venue, order_type, reasoning, source)`
 Execute a trade.
 - `market_id`: Market to trade on
 - `side`: `yes` or `no`
-- `amount`: Dollar amount to spend
+- `amount`: Dollar amount to spend (for buys)
+- `shares`: Number of shares to sell (for sells)
+- `action`: `buy` (default) or `sell`
 - `venue`: Override client's default venue for this trade (optional)
 - `order_type`: Order type for Polymarket trades (default: `"FAK"`)
   - `"FAK"`: Fill And Kill - fill what you can immediately, cancel rest (recommended for bots)
@@ -358,6 +487,64 @@ Get a specific market by ID.
 - `market_id`: Market ID
 - Returns: `Market` object or `None`
 
+### External Wallet Methods
+
+#### `link_wallet(signature_type=0)`
+Link an external wallet to your Simmer account. Requires `private_key` to be set.
+- `signature_type`: Wallet type (default: 0)
+  - `0`: EOA (standard wallet)
+  - `1`: Polymarket proxy wallet
+  - `2`: Gnosis Safe
+- Returns: Dict with `success` status
+- Raises: `ValueError` if `private_key` not configured
+
+#### `check_approvals(address=None)`
+Check Polymarket token approvals for a wallet.
+- `address`: Wallet to check (default: client's wallet if `private_key` set)
+- Returns: Dict with `all_set` (bool) and individual approval status
+
+#### `ensure_approvals()`
+Check approvals and return transaction data for missing ones. Requires `private_key` to be set.
+- Returns: Dict with:
+  - `ready`: `True` if all approvals set
+  - `missing_transactions`: List of tx data for missing approvals
+  - `guide`: Human-readable status message
+  - `raw_status`: Full approval status from `check_approvals()`
+
+#### `wallet_address` (property)
+Get the wallet address derived from the private key.
+- Returns: Address string or `None` if no private key set
+
+#### `has_external_wallet` (property)
+Check if client is configured for external wallet trading.
+- Returns: `True` if `private_key` was provided
+
+### Approval Helpers
+
+Standalone functions for working with Polymarket approvals:
+
+```python
+from simmer_sdk import (
+    get_required_approvals,
+    get_approval_transactions,
+    get_missing_approval_transactions,
+    format_approval_guide,
+)
+
+# List all 6 required approvals
+approvals = get_required_approvals()
+
+# Get transaction data for all approvals
+txs = get_approval_transactions()
+
+# Get only missing approval transactions
+status = client.check_approvals()
+missing = get_missing_approval_transactions(status)
+
+# Format human-readable guide
+print(format_approval_guide(status))
+```
+
 ## Data Classes
 
 ### Market
@@ -373,13 +560,19 @@ Get a specific market by ID.
 
 ### Position
 - `market_id`: Market ID
+- `question`: Market question
 - `shares_yes`: YES shares held
 - `shares_no`: NO shares held
+- `sim_balance`: $SIM balance
 - `current_value`: Current position value
 - `pnl`: Unrealized profit/loss
+- `status`: Market status
 
 ### TradeResult
 - `success`: Whether trade succeeded
+- `trade_id`: Unique trade identifier
+- `market_id`: Market ID traded on
+- `side`: Side traded (`yes` or `no`)
 - `shares_bought`: Shares actually filled
 - `shares_requested`: Shares requested (for partial fill detection)
 - `order_status`: Polymarket order status (`"matched"`, `"live"`, `"delayed"`)
@@ -391,7 +584,7 @@ Get a specific market by ID.
 
 **Checking for partial fills:**
 ```python
-result = client.trade(market_id, "yes", 10.0, venue="polymarket")
+result = client.trade(market_id, side="yes", amount=10.0, venue="polymarket")
 if result.fully_filled:
     print(f"Got all {result.shares_bought} shares")
 else:
@@ -409,6 +602,13 @@ else:
 | `Daily limit exceeded` | Over $500/day | Wait for midnight UTC |
 | `Insufficient balance` | Not enough USDC.e | Fund wallet |
 | `Market missing token data` | Not a Polymarket import | Use `import_source="polymarket"` filter |
+| `Private key must start with '0x'` | Invalid key format | Use hex format with 0x prefix |
+| `Invalid private key length` | Key wrong length | Should be 66 chars (0x + 64 hex) |
+| `External wallet requires eth_account` | Missing dependency | `pip install eth-account` |
+| `Wallet already linked to another account` | Wallet in use | Use different wallet or contact support |
+| `Challenge expired` | Took too long to link | Request new challenge |
+| `Maker address mismatch` | Signed order wrong wallet | Sign with linked wallet |
+| `Approvals not set` | Token approvals missing | Run `ensure_approvals()` |
 
 ## License
 
