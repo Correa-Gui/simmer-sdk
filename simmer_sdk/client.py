@@ -4,9 +4,13 @@ Simmer SDK Client
 Simple Python client for trading on Simmer prediction markets.
 """
 
+import os
+import logging
 import requests
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -103,6 +107,8 @@ class SimmerClient:
     ORDER_TYPES = ("GTC", "GTD", "FOK", "FAK")
     # Private key format: 0x + 64 hex characters
     PRIVATE_KEY_LENGTH = 66
+    # Environment variable for private key auto-detection
+    PRIVATE_KEY_ENV_VAR = "SIMMER_PRIVATE_KEY"
 
     def __init__(
         self,
@@ -127,6 +133,10 @@ class SimmerClient:
                 When provided, orders are signed locally instead of server-side.
                 This enables trading with your own Polymarket wallet.
 
+                If not provided, the SDK will auto-detect from the SIMMER_PRIVATE_KEY
+                environment variable. This allows existing skills/bots to use external
+                wallets without code changes.
+
                 SECURITY WARNING:
                 - Never log or print the private key
                 - Never commit it to version control
@@ -139,12 +149,25 @@ class SimmerClient:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.venue = venue
-        self._private_key = private_key  # Stored privately, never logged
+        self._private_key: Optional[str] = None
         self._wallet_address: Optional[str] = None
+        self._wallet_linked: Optional[bool] = None  # Cached linking status
+        self._approvals_checked: bool = False  # Track if we've warned about approvals
 
-        # Derive wallet address if private key provided
-        if private_key:
-            self._validate_and_set_wallet(private_key)
+        # Use provided private_key, or auto-detect from environment
+        env_key = os.environ.get(self.PRIVATE_KEY_ENV_VAR)
+        effective_key = private_key or env_key
+
+        if effective_key:
+            self._validate_and_set_wallet(effective_key)
+            self._private_key = effective_key
+            # Log that external wallet mode is active (but never log the key!)
+            if not private_key and env_key:
+                logger.info(
+                    "External wallet mode: detected %s env var, wallet %s",
+                    self.PRIVATE_KEY_ENV_VAR,
+                    self._wallet_address[:10] + "..." if self._wallet_address else "unknown"
+                )
 
         self._session = requests.Session()
         self._session.headers.update({
@@ -178,6 +201,67 @@ class SimmerClient:
     def has_external_wallet(self) -> bool:
         """Check if client is configured for external wallet trading."""
         return self._private_key is not None
+
+    def _ensure_wallet_linked(self) -> None:
+        """
+        Ensure wallet is linked to Simmer account before trading.
+
+        Called automatically before external wallet trades.
+        Caches the result to avoid repeated API calls.
+        """
+        if not self._private_key or not self._wallet_address:
+            return
+
+        # If we've already confirmed it's linked, skip
+        if self._wallet_linked is True:
+            return
+
+        # Check if wallet is already linked via API
+        try:
+            settings = self._request("GET", "/api/sdk/settings")
+            linked_address = settings.get("linked_wallet_address") or settings.get("wallet_address")
+
+            if linked_address and linked_address.lower() == self._wallet_address.lower():
+                self._wallet_linked = True
+                logger.debug("Wallet %s already linked", self._wallet_address[:10] + "...")
+                return
+        except Exception as e:
+            logger.debug("Could not check wallet link status: %s", e)
+
+        # Wallet not linked - attempt to link automatically
+        logger.info("Auto-linking wallet %s to Simmer account...", self._wallet_address[:10] + "...")
+        try:
+            result = self.link_wallet(signature_type=0)
+            if result.get("success"):
+                self._wallet_linked = True
+                logger.info("Wallet linked successfully")
+            else:
+                logger.warning("Wallet linking returned: %s", result.get("error", "unknown error"))
+        except Exception as e:
+            # Log warning but don't fail - the trade API will return proper error
+            logger.warning("Auto-link failed: %s. Trade may fail if wallet not linked.", e)
+
+    def _warn_approvals_once(self) -> None:
+        """
+        Check and warn about missing approvals (once per session).
+
+        Called before first external wallet trade.
+        """
+        if self._approvals_checked or not self._wallet_address:
+            return
+
+        self._approvals_checked = True
+
+        try:
+            status = self.check_approvals()
+            if not status.get("all_set", False):
+                logger.warning(
+                    "Polymarket approvals may be missing for wallet %s. "
+                    "Trade may fail. Use client.ensure_approvals() to check status.",
+                    self._wallet_address[:10] + "..."
+                )
+        except Exception as e:
+            logger.debug("Could not check approvals: %s", e)
 
     def _request(
         self,
@@ -331,8 +415,13 @@ class SimmerClient:
         if source:
             payload["source"] = source
 
-        # External wallet: sign locally and include signed_order
+        # External wallet: ensure linked, check approvals, sign locally
         if self._private_key and effective_venue == "polymarket":
+            # Auto-link wallet if not already linked
+            self._ensure_wallet_linked()
+            # Warn about missing approvals (once per session)
+            self._warn_approvals_once()
+            # Sign order locally
             signed_order = self._build_signed_order(
                 market_id, side, amount if not is_sell else 0,
                 shares if is_sell else 0, action

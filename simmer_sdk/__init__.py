@@ -15,28 +15,35 @@ Usage:
     # Get positions
     positions = client.get_positions()
 
-External Wallet Trading:
-    # Trade with your own Polymarket wallet (local signing)
-    client = SimmerClient(
-        api_key="sk_live_...",
-        venue="polymarket",
-        private_key="0x..."  # Your wallet's private key
-    )
+External Wallet Trading (BYOW):
+    The SDK supports trading with your own Polymarket wallet (Bring Your Own Wallet).
+    There are two ways to configure this:
 
-    # Link wallet to your account (one-time setup)
-    client.link_wallet()
+    Option 1: Environment variable (recommended for clawbots/skills)
+        # Set in your environment or config.yaml:
+        # SIMMER_PRIVATE_KEY=0x...
 
-    # Check approvals
-    approvals = client.check_approvals()
+        # SDK auto-detects and uses your wallet
+        client = SimmerClient(api_key="sk_live_...", venue="polymarket")
+        result = client.trade(...)  # Signs locally, auto-links wallet
 
-    # If missing approvals, get transaction data
-    if not approvals["all_set"]:
-        from simmer_sdk.approvals import get_missing_approval_transactions
-        txs = get_missing_approval_transactions(approvals)
-        # Sign and send each tx from your wallet
+    Option 2: Explicit parameter
+        client = SimmerClient(
+            api_key="sk_live_...",
+            venue="polymarket",
+            private_key="0x..."  # Your wallet's private key
+        )
+        result = client.trade(...)  # Signs locally, auto-links wallet
 
-    # Trade (signs locally, submits through Simmer)
-    result = client.trade(market_id="...", side="yes", amount=10.0)
+    The SDK will:
+    - Auto-detect SIMMER_PRIVATE_KEY env var if private_key not provided
+    - Auto-link your wallet on first trade (if not already linked)
+    - Warn about missing Polymarket approvals
+
+    For manual control:
+        client.link_wallet()  # Explicitly link wallet
+        client.check_approvals()  # Check approval status
+        client.ensure_approvals()  # Get missing approval tx data
 
     SECURITY WARNING:
     - Never log or print your private key
@@ -52,7 +59,7 @@ from .approvals import (
     format_approval_guide,
 )
 
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 __all__ = [
     "SimmerClient",
     "get_required_approvals",

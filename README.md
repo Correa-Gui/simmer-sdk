@@ -179,7 +179,31 @@ Trade with your **own Polymarket wallet** instead of a Simmer-managed wallet. Or
 pip install simmer-sdk eth-account py-order-utils py-clob-client
 ```
 
-#### 2. Link Your Wallet
+#### 2. Configure Your Wallet
+
+**Option A: Environment Variable (Recommended for clawbots)**
+
+Set `SIMMER_PRIVATE_KEY` in your environment or config. The SDK auto-detects it:
+
+```bash
+# In your .env or config.yaml
+SIMMER_PRIVATE_KEY=0x...
+```
+
+```python
+from simmer_sdk import SimmerClient
+
+# SDK auto-detects SIMMER_PRIVATE_KEY env var
+client = SimmerClient(
+    api_key="sk_live_...",
+    venue="polymarket"
+)
+
+# Just trade - SDK handles linking automatically on first trade
+result = client.trade(market_id="...", side="yes", amount=10.0)
+```
+
+**Option B: Explicit Parameter**
 
 ```python
 from simmer_sdk import SimmerClient
@@ -190,7 +214,16 @@ client = SimmerClient(
     private_key="0x..."  # Your wallet's private key
 )
 
-# Link wallet to your Simmer account (one-time)
+# Just trade - SDK handles linking automatically
+result = client.trade(market_id="...", side="yes", amount=10.0)
+```
+
+**Manual Linking (Optional)**
+
+If you prefer explicit control:
+
+```python
+# Link wallet manually (one-time)
 client.link_wallet()
 print(f"Linked: {client.wallet_address}")
 ```
