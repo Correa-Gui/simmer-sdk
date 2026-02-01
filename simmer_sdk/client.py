@@ -586,7 +586,7 @@ class SimmerClient:
         query_lower = query.lower()
         return [m for m in markets if query_lower in m.question.lower()]
 
-    def import_market(self, polymarket_url: str) -> Dict[str, Any]:
+    def import_market(self, polymarket_url: str, sandbox: bool = None) -> Dict[str, Any]:
         """
         Import a Polymarket market to Simmer.
 
@@ -602,6 +602,7 @@ class SimmerClient:
 
         Args:
             polymarket_url: Full Polymarket URL to import
+            sandbox: DEPRECATED - ignored. All imports are now public.
 
         Returns:
             Dict with market_id, question, and import details
@@ -621,6 +622,14 @@ class SimmerClient:
             # Or trade real money
             client.trade(market_id=result['market_id'], side="yes", amount=50, venue="polymarket")
         """
+        if sandbox is not None:
+            import warnings
+            warnings.warn(
+                "The 'sandbox' parameter is deprecated and ignored. "
+                "All imports are now public. Remove the sandbox parameter.",
+                DeprecationWarning,
+                stacklevel=2
+            )
         data = self._request(
             "POST",
             "/api/sdk/markets/import",
