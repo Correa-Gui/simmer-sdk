@@ -102,13 +102,15 @@ class SimmerClient:
     """
 
     # Valid venue options
-    VENUES = ("sandbox", "polymarket", "shadow")
+    VENUES = ("sandbox", "polymarket", "kalshi", "shadow")
     # Valid order types for Polymarket CLOB
     ORDER_TYPES = ("GTC", "GTD", "FOK", "FAK")
-    # Private key format: 0x + 64 hex characters
+    # Private key format: 0x + 64 hex characters (EVM)
     PRIVATE_KEY_LENGTH = 66
-    # Environment variable for private key auto-detection
+    # Environment variable for EVM private key auto-detection (Polymarket)
     PRIVATE_KEY_ENV_VAR = "SIMMER_PRIVATE_KEY"
+    # Environment variable for Solana private key (Kalshi via DFlow)
+    SOLANA_PRIVATE_KEY_ENV_VAR = "SIMMER_SOLANA_KEY"
 
     def __init__(
         self,
@@ -129,13 +131,15 @@ class SimmerClient:
                   (requires wallet linked in dashboard + real trading enabled)
                 - "shadow": Paper trading - executes on LMSR but tracks P&L against
                   real Polymarket prices (coming soon)
-            private_key: Optional wallet private key for external wallet trading.
+            private_key: Optional EVM wallet private key for Polymarket trading.
                 When provided, orders are signed locally instead of server-side.
                 This enables trading with your own Polymarket wallet.
 
                 If not provided, the SDK will auto-detect from the SIMMER_PRIVATE_KEY
                 environment variable. This allows existing skills/bots to use external
                 wallets without code changes.
+
+                For Kalshi trading, use SIMMER_SOLANA_KEY env var instead (base58 format).
 
                 SECURITY WARNING:
                 - Never log or print the private key
@@ -149,12 +153,14 @@ class SimmerClient:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.venue = venue
-        self._private_key: Optional[str] = None
-        self._wallet_address: Optional[str] = None
+        self._private_key: Optional[str] = None  # EVM private key (Polymarket)
+        self._wallet_address: Optional[str] = None  # EVM wallet address
         self._wallet_linked: Optional[bool] = None  # Cached linking status
         self._approvals_checked: bool = False  # Track if we've warned about approvals
+        self._solana_key_available: bool = False  # Solana key configured (Kalshi)
+        self._solana_wallet_address: Optional[str] = None  # Solana wallet address
 
-        # Use provided private_key, or auto-detect from environment
+        # EVM key: Use provided private_key, or auto-detect from environment
         env_key = os.environ.get(self.PRIVATE_KEY_ENV_VAR)
         effective_key = private_key or env_key
 
@@ -164,10 +170,26 @@ class SimmerClient:
             # Log that external wallet mode is active (but never log the key!)
             if not private_key and env_key:
                 logger.info(
-                    "External wallet mode: detected %s env var, wallet %s",
+                    "External wallet mode (EVM): detected %s env var, wallet %s",
                     self.PRIVATE_KEY_ENV_VAR,
                     self._wallet_address[:10] + "..." if self._wallet_address else "unknown"
                 )
+
+        # Solana key: Auto-detect from environment for Kalshi trading
+        if os.environ.get(self.SOLANA_PRIVATE_KEY_ENV_VAR):
+            self._solana_key_available = True
+            # Derive wallet address (deferred until needed to avoid import if not used)
+            try:
+                from .solana_signing import get_solana_public_key
+                self._solana_wallet_address = get_solana_public_key()
+                if self._solana_wallet_address:
+                    logger.info(
+                        "External wallet mode (Solana): detected %s env var, wallet %s",
+                        self.SOLANA_PRIVATE_KEY_ENV_VAR,
+                        self._solana_wallet_address[:10] + "..."
+                    )
+            except Exception as e:
+                logger.warning("Could not derive Solana wallet address: %s", e)
 
         self._session = requests.Session()
         self._session.headers.update({
@@ -194,13 +216,23 @@ class SimmerClient:
 
     @property
     def wallet_address(self) -> Optional[str]:
-        """Get the wallet address (only available when private_key is set)."""
+        """Get the EVM wallet address (only available when private_key is set)."""
         return self._wallet_address
 
     @property
     def has_external_wallet(self) -> bool:
-        """Check if client is configured for external wallet trading."""
+        """Check if client is configured for external EVM wallet trading (Polymarket)."""
         return self._private_key is not None
+
+    @property
+    def solana_wallet_address(self) -> Optional[str]:
+        """Get the Solana wallet address (only available when SIMMER_SOLANA_KEY is set)."""
+        return self._solana_wallet_address
+
+    @property
+    def has_solana_wallet(self) -> bool:
+        """Check if client is configured for external Solana wallet trading (Kalshi)."""
+        return self._solana_key_available
 
     def _ensure_wallet_linked(self) -> None:
         """
@@ -344,6 +376,8 @@ class SimmerClient:
             venue: Override client's default venue for this trade.
                 - "sandbox": Simmer LMSR, $SIM virtual currency
                 - "polymarket": Real Polymarket CLOB, USDC (requires linked wallet)
+                - "kalshi": Real Kalshi trading via DFlow, USDC on Solana
+                  (requires SIMMER_SOLANA_KEY env var with base58 secret key)
                 - "shadow": Paper trading against real prices (coming soon)
                 - None: Use client's default venue
             order_type: Order type for Polymarket trades (default: "FAK").
@@ -378,13 +412,20 @@ class SimmerClient:
                 source="sdk:my-strategy"
             )
 
-            # External wallet trading (local signing)
+            # External wallet trading - Polymarket (local EVM signing)
             client = SimmerClient(
                 api_key="sk_live_...",
                 venue="polymarket",
-                private_key="0x..."  # Your wallet's private key
+                private_key="0x..."  # Your EVM wallet's private key
             )
             result = client.trade(market_id, "yes", 10.0)  # Signs locally
+
+            # External wallet trading - Kalshi (local Solana signing)
+            # Set SIMMER_SOLANA_KEY env var to your base58 Solana secret key
+            import os
+            os.environ["SIMMER_SOLANA_KEY"] = "your_base58_secret_key"
+            client = SimmerClient(api_key="sk_live_...", venue="kalshi")
+            result = client.trade(market_id, "yes", 10.0)  # Signs locally with Solana key
         """
         effective_venue = venue or self.venue
         if effective_venue not in self.VENUES:
@@ -428,6 +469,18 @@ class SimmerClient:
             )
             if signed_order:
                 payload["signed_order"] = signed_order
+
+        # Kalshi BYOW: sign transactions locally using SIMMER_SOLANA_KEY
+        if effective_venue == "kalshi":
+            return self._execute_kalshi_byow_trade(
+                market_id=market_id,
+                side=side,
+                amount=amount,
+                shares=shares,
+                action=action,
+                reasoning=reasoning,
+                source=source
+            )
 
         data = self._request(
             "POST",
@@ -939,6 +992,152 @@ class SimmerClient:
         )
 
         return signed.to_dict()
+
+    def _execute_kalshi_byow_trade(
+        self,
+        market_id: str,
+        side: str,
+        amount: float = 0,
+        shares: float = 0,
+        action: str = "buy",
+        reasoning: Optional[str] = None,
+        source: Optional[str] = None
+    ) -> TradeResult:
+        """
+        Execute a Kalshi trade using BYOW (Bring Your Own Wallet).
+
+        Uses SIMMER_SOLANA_KEY environment variable for local signing.
+        The private key never leaves the local machine.
+
+        Flow:
+        1. Get unsigned transaction from Simmer API (via DFlow)
+        2. Sign locally using SIMMER_SOLANA_KEY
+        3. Submit signed transaction to Simmer API
+
+        Args:
+            market_id: Market ID to trade on
+            side: 'yes' or 'no'
+            amount: Dollar amount (for buys)
+            shares: Number of shares (for sells)
+            action: 'buy' or 'sell'
+            reasoning: Optional trade explanation
+            source: Optional source tag
+
+        Returns:
+            TradeResult with execution details
+        """
+        # Check for Solana key
+        if not self._solana_key_available:
+            return TradeResult(
+                success=False,
+                market_id=market_id,
+                side=side,
+                error=(
+                    "SIMMER_SOLANA_KEY environment variable required for Kalshi trading. "
+                    "Set it to your base58-encoded Solana secret key."
+                )
+            )
+
+        try:
+            from .solana_signing import sign_solana_transaction
+        except ImportError as e:
+            return TradeResult(
+                success=False,
+                market_id=market_id,
+                side=side,
+                error=f"Solana signing not available: {e}"
+            )
+
+        is_sell = action == "sell"
+
+        # Step 1: Get unsigned transaction from Simmer API
+        try:
+            quote_payload = {
+                "market_id": market_id,
+                "side": side,
+                "amount": amount,
+                "shares": shares,
+                "action": action,
+                "wallet_address": self._solana_wallet_address
+            }
+            quote = self._request(
+                "POST",
+                "/api/sdk/trade/kalshi/quote",
+                json=quote_payload
+            )
+        except Exception as e:
+            return TradeResult(
+                success=False,
+                market_id=market_id,
+                side=side,
+                error=f"Failed to get quote: {e}"
+            )
+
+        if not quote.get("success"):
+            return TradeResult(
+                success=False,
+                market_id=market_id,
+                side=side,
+                error=quote.get("error", "Failed to get quote from Simmer")
+            )
+
+        unsigned_tx = quote.get("transaction")
+        if not unsigned_tx:
+            return TradeResult(
+                success=False,
+                market_id=market_id,
+                side=side,
+                error="Quote missing transaction data"
+            )
+
+        # Step 2: Sign locally
+        try:
+            signed_tx = sign_solana_transaction(unsigned_tx)
+        except Exception as e:
+            return TradeResult(
+                success=False,
+                market_id=market_id,
+                side=side,
+                error=f"Local signing failed: {e}"
+            )
+
+        # Step 3: Submit signed transaction
+        try:
+            submit_payload = {
+                "market_id": market_id,
+                "side": side,
+                "action": action,
+                "signed_transaction": signed_tx,
+                "quote_id": quote.get("quote_id"),  # For tracking
+                "reasoning": reasoning,
+                "source": source
+            }
+            data = self._request(
+                "POST",
+                "/api/sdk/trade/kalshi/submit",
+                json=submit_payload
+            )
+        except Exception as e:
+            return TradeResult(
+                success=False,
+                market_id=market_id,
+                side=side,
+                error=f"Failed to submit trade: {e}"
+            )
+
+        return TradeResult(
+            success=data.get("success", False),
+            trade_id=data.get("trade_id"),
+            market_id=data.get("market_id", market_id),
+            side=data.get("side", side),
+            shares_bought=data.get("shares_bought", 0) if not is_sell else 0,
+            shares_requested=data.get("shares_requested", 0),
+            order_status=data.get("order_status"),
+            cost=data.get("cost", 0),
+            new_price=data.get("new_price", 0),
+            balance=None,  # Real trading doesn't track $SIM balance
+            error=data.get("error")
+        )
 
     def link_wallet(self, signature_type: int = 0) -> Dict[str, Any]:
         """

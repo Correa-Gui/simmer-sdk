@@ -27,20 +27,24 @@ The platform uses LMSR (automated market maker) pricing, so you always get insta
 
 ## Trading Venues
 
-The SDK supports three trading venues via the `venue` parameter:
+The SDK supports four trading venues via the `venue` parameter:
 
 | Venue | Currency | Description |
 |-------|----------|-------------|
 | `sandbox` | $SIM (virtual) | Default. Trade on Simmer's LMSR markets with virtual currency. |
-| `polymarket` | USDC (real) | Execute real trades on Polymarket. Requires wallet linked in dashboard. |
+| `polymarket` | USDC (real) | Execute real trades on Polymarket (Polygon). Requires EVM wallet. |
+| `kalshi` | USDC (real) | Execute real trades on Kalshi via DFlow (Solana). Requires Solana wallet. |
 | `shadow` | $SIM | Paper trading - LMSR execution with P&L tracked against real prices. *(Coming soon)* |
 
 ```python
 # Sandbox trading (default) - virtual currency, no risk
 client = SimmerClient(api_key="sk_live_...", venue="sandbox")
 
-# Real trading on Polymarket - requires linked wallet
+# Real trading on Polymarket - requires EVM wallet (SIMMER_PRIVATE_KEY)
 client = SimmerClient(api_key="sk_live_...", venue="polymarket")
+
+# Real trading on Kalshi - requires Solana wallet (SIMMER_SOLANA_KEY)
+client = SimmerClient(api_key="sk_live_...", venue="kalshi")
 
 # Override venue for a single trade
 result = client.trade(market_id, side="yes", amount=10.0, venue="polymarket")
@@ -322,6 +326,87 @@ result = client.trade(
 3. **Benchmark**: Compare your bot's P&L against Simmer's native agents
 4. **Graduate**: Enable real trading to execute on Polymarket
 
+## Kalshi Trading (Solana)
+
+Trade on Kalshi markets using your own Solana wallet. Orders are signed locally and executed via DFlow.
+
+### Setup
+
+#### 1. Install Node.js Dependencies
+
+Kalshi signing requires Node.js (for Solana transaction signing):
+
+```bash
+cd /path/to/simmer-sdk
+npm install
+```
+
+This installs `@solana/web3.js` and `bs58` for local signing.
+
+#### 2. Configure Your Solana Wallet
+
+Set `SIMMER_SOLANA_KEY` to your base58-encoded Solana secret key:
+
+```bash
+# In your .env or config.yaml
+SIMMER_SOLANA_KEY=your_base58_secret_key_here
+```
+
+> **Getting your Solana secret key:**
+> - **Phantom**: Settings → Security → Export Private Key
+> - **Solflare**: Settings → Export Private Key
+> - **CLI**: `solana-keygen pubkey ~/.config/solana/id.json` shows your address, the file contains the keypair
+
+#### 3. Fund Your Wallet
+
+Your Solana wallet needs:
+- **USDC**: For trading (Solana USDC, not Polygon USDC.e)
+- **SOL**: For transaction fees (~0.01 SOL per trade)
+
+#### 4. Trade
+
+```python
+import os
+os.environ["SIMMER_SOLANA_KEY"] = "your_base58_secret_key"
+
+from simmer_sdk import SimmerClient
+
+client = SimmerClient(api_key="sk_live_...", venue="kalshi")
+
+# Get Kalshi markets
+markets = client.get_markets(import_source="kalshi")
+
+# Trade - signing happens locally, key never leaves your machine
+result = client.trade(market_id=markets[0].id, side="yes", amount=10.0)
+print(f"Trade executed: {result.trade_id}")
+```
+
+### How It Works
+
+1. SDK requests unsigned transaction from Simmer (via DFlow)
+2. SDK signs transaction locally using your `SIMMER_SOLANA_KEY`
+3. SDK submits signed transaction through Simmer
+4. Transaction executes on Solana
+
+**Your private key never leaves your machine** - only the signed transaction is sent to Simmer.
+
+### Security
+
+- **Key storage**: Use environment variables or secret managers, never hardcode
+- **Key format**: Base58-encoded 64-byte Solana secret key
+- **Signing**: Done locally via Node.js (`@solana/web3.js`)
+- **Transmission**: Only signed transactions are sent to Simmer
+
+### Troubleshooting
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `SIMMER_SOLANA_KEY env var required` | Key not set | Set env var with base58 secret key |
+| `Node.js is required for Solana signing` | Node.js not installed | Install Node.js 16+ |
+| `Solana signing script not found` | Missing npm install | Run `npm install` in SDK directory |
+| `Invalid key length` | Wrong key format | Use base58 secret key (64 bytes) |
+| `Market missing Kalshi ticker` | Not a Kalshi market | Filter with `import_source="kalshi"` |
+
 ## Installation
 
 ```bash
@@ -446,9 +531,12 @@ my_positions = portfolio['by_source'].get('sdk:my-strategy', {})
 - `base_url`: API URL (default: `https://api.simmer.markets`)
 - `venue`: Trading venue (default: `sandbox`)
   - `sandbox`: Simmer LMSR with $SIM virtual currency
-  - `polymarket`: Real Polymarket CLOB with USDC
+  - `polymarket`: Real Polymarket CLOB with USDC (requires `SIMMER_PRIVATE_KEY` or `private_key`)
+  - `kalshi`: Real Kalshi via DFlow with USDC on Solana (requires `SIMMER_SOLANA_KEY` env var)
   - `shadow`: Paper trading against real prices *(coming soon)*
-- `private_key`: Optional wallet private key for external wallet trading. When provided, orders are signed locally instead of server-side.
+- `private_key`: Optional EVM wallet private key for Polymarket trading. When provided, orders are signed locally instead of server-side.
+
+> **Note:** For Kalshi, use `SIMMER_SOLANA_KEY` environment variable (not `private_key` parameter).
 
 #### `get_markets(status, import_source, limit)`
 List available markets.
@@ -554,8 +642,16 @@ Get the wallet address derived from the private key.
 - Returns: Address string or `None` if no private key set
 
 #### `has_external_wallet` (property)
-Check if client is configured for external wallet trading.
+Check if client is configured for external EVM wallet trading (Polymarket).
 - Returns: `True` if `private_key` was provided
+
+#### `solana_wallet_address` (property)
+Get the Solana wallet address derived from `SIMMER_SOLANA_KEY`.
+- Returns: Address string (base58) or `None` if no Solana key set
+
+#### `has_solana_wallet` (property)
+Check if client is configured for Solana wallet trading (Kalshi).
+- Returns: `True` if `SIMMER_SOLANA_KEY` env var is set
 
 ### Approval Helpers
 
@@ -647,6 +743,11 @@ else:
 | `Challenge expired` | Took too long to link | Request new challenge |
 | `Maker address mismatch` | Signed order wrong wallet | Sign with linked wallet |
 | `Approvals not set` | Token approvals missing | Run `ensure_approvals()` |
+| `SIMMER_SOLANA_KEY env var required` | Kalshi needs Solana key | Set env var with base58 secret key |
+| `Node.js is required for Solana signing` | Node.js not found | Install Node.js 16+ |
+| `Solana signing script not found` | Missing npm dependencies | Run `npm install` in SDK directory |
+| `Invalid key length` (Solana) | Wrong key format | Use base58 secret key (64 bytes) |
+| `Kalshi venue only supported for Kalshi markets` | Wrong market type | Filter with `import_source="kalshi"` |
 
 ## License
 
