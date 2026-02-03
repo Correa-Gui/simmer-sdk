@@ -564,7 +564,7 @@ def calculate_position_size(api_key: str, default_size: float, smart_sizing: boo
 
     smart_size = balance * SMART_SIZING_PCT
     # Cap at max position size
-    smart_size = min(smart_size, MAX_POSITION_USD * 5)  # Allow up to 5x default for well-funded accounts
+    smart_size = min(smart_size, MAX_POSITION_USD)  # Cap at max position size
     # Floor at minimum viable trade
     smart_size = max(smart_size, 1.0)
 
