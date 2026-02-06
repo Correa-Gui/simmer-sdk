@@ -6,8 +6,8 @@ Trades Polymarket weather markets using NOAA forecasts.
 Inspired by gopfan2's $2M+ weather trading strategy.
 
 Usage:
-    python weather_trader.py              # Run trading scan
-    python weather_trader.py --dry-run    # Show opportunities without trading
+    python weather_trader.py              # Dry run (show opportunities, no trades)
+    python weather_trader.py --live       # Execute real trades
     python weather_trader.py --positions  # Show current positions only
     python weather_trader.py --smart-sizing  # Use portfolio-based position sizing
 
@@ -656,12 +656,15 @@ def check_exit_opportunities(api_key: str, dry_run: bool = False, use_safeguards
 # Main Strategy Logic
 # =============================================================================
 
-def run_weather_strategy(dry_run: bool = False, positions_only: bool = False, 
+def run_weather_strategy(dry_run: bool = True, positions_only: bool = False,
                          show_config: bool = False, smart_sizing: bool = False,
                          use_safeguards: bool = True, use_trends: bool = True):
     """Run the weather trading strategy."""
     print("🌤️  Simmer Weather Trading Skill")
     print("=" * 50)
+
+    if dry_run:
+        print("\n  [DRY RUN] No trades will be executed. Use --live to enable trading.")
 
     print(f"\n⚙️  Configuration:")
     print(f"  Entry threshold: {ENTRY_THRESHOLD:.0%} (buy below this)")
@@ -884,7 +887,8 @@ def run_weather_strategy(dry_run: bool = False, positions_only: bool = False,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Simmer Weather Trading Skill")
-    parser.add_argument("--dry-run", action="store_true", help="Show opportunities without trading")
+    parser.add_argument("--live", action="store_true", help="Execute real trades (default is dry-run)")
+    parser.add_argument("--dry-run", action="store_true", help="(Default) Show opportunities without trading")
     parser.add_argument("--positions", action="store_true", help="Show current positions only")
     parser.add_argument("--config", action="store_true", help="Show current config")
     parser.add_argument("--set", action="append", metavar="KEY=VALUE",
@@ -923,9 +927,12 @@ if __name__ == "__main__":
             _locations_str = _config["locations"]
             globals()["ACTIVE_LOCATIONS"] = [loc.strip().upper() for loc in _locations_str.split(",") if loc.strip()]
 
+    # Default to dry-run unless --live is explicitly passed
+    dry_run = not args.live
+
     run_weather_strategy(
-        dry_run=args.dry_run, 
-        positions_only=args.positions, 
+        dry_run=dry_run,
+        positions_only=args.positions,
         show_config=args.config,
         smart_sizing=args.smart_sizing,
         use_safeguards=not args.no_safeguards,

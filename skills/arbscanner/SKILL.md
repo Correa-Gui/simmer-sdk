@@ -1,7 +1,7 @@
 ---
 name: simmer-arbscanner
 description: Detect and execute Polymarket arbitrage opportunities via Simmer. Single-condition (YES+NO≠$1) and NegRisk (multi-outcome sum≠100%) strategies.
-metadata: {"openclaw":{"emoji":"📊","requires":{"env":["SIMMER_API_KEY"]},"cron":"*/30 * * * *"}}
+metadata: {"openclaw":{"emoji":"📊","requires":{"env":["SIMMER_API_KEY"]},"cron":null,"autostart":false}}
 authors:
   - Simmer (@simmer_markets)
 attribution: "Detection logic based on runesatsdev/polymarket-arbitrage-bot and IMDEA Networks research"

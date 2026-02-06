@@ -1,7 +1,7 @@
 ---
 name: simmer-weather
 description: Trade Polymarket weather markets using NOAA forecasts via Simmer API. Inspired by gopfan2's $2M+ strategy. Use when user wants to trade temperature markets, automate weather bets, check NOAA forecasts, or run gopfan2-style trading.
-metadata: {"clawdbot":{"emoji":"🌡️","requires":{"env":["SIMMER_API_KEY"]},"cron":"0 */2 * * *"}}
+metadata: {"clawdbot":{"emoji":"🌡️","requires":{"env":["SIMMER_API_KEY"]},"cron":null,"autostart":false}}
 authors:
   - Simmer (@simmer_markets)
 attribution: "Strategy inspired by gopfan2"
@@ -51,7 +51,7 @@ When user asks to install or configure this skill:
 
 3. **Save settings to environment variables**
 
-4. **Set up cron** (runs every 2 hours by default)
+4. **Set up cron** (disabled by default — user must enable scheduling)
 
 ## Configuration
 
@@ -85,14 +85,14 @@ python scripts/status.py --positions
 ## Running the Skill
 
 ```bash
-# Standard scan
+# Dry run (default — shows opportunities, no trades)
 python weather_trader.py
 
-# Dry run (no trades)
-python weather_trader.py --dry-run
+# Execute real trades
+python weather_trader.py --live
 
 # With smart position sizing (uses portfolio balance)
-python weather_trader.py --smart-sizing
+python weather_trader.py --live --smart-sizing
 
 # Check positions only
 python weather_trader.py --positions

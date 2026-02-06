@@ -7,8 +7,8 @@ Pattern A skill with SDK infrastructure:
 - SDK provides: context endpoint (safeguards), trade endpoint
 
 Usage:
-    python signal_sniper.py                     # Run configured scan
-    python signal_sniper.py --dry-run           # No actual trades
+    python signal_sniper.py                     # Dry run (show signals, no trades)
+    python signal_sniper.py --live              # Execute real trades
     python signal_sniper.py --scan-only         # Just show matches
     python signal_sniper.py --config            # Show configuration
     python signal_sniper.py --history           # Show processed articles
@@ -541,7 +541,7 @@ def run_scan(
     feeds: List[str],
     markets: List[str],
     keywords: List[str],
-    dry_run: bool = False,
+    dry_run: bool = True,
     scan_only: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -549,6 +549,9 @@ def run_scan(
 
     Returns summary of results.
     """
+    if dry_run:
+        print("\n  [DRY RUN] No trades will be executed. Use --live to enable trading.\n")
+
     if not API_KEY:
         print("❌ SIMMER_API_KEY not set")
         return {"error": "No API key"}
@@ -718,7 +721,8 @@ def run_scan(
 
 def main():
     parser = argparse.ArgumentParser(description="Signal Sniper - Trade on user-configured signals")
-    parser.add_argument("--dry-run", action="store_true", help="Don't execute trades")
+    parser.add_argument("--live", action="store_true", help="Execute real trades (default is dry-run)")
+    parser.add_argument("--dry-run", action="store_true", help="(Default) Don't execute trades")
     parser.add_argument("--scan-only", action="store_true", help="Only scan, don't analyze")
     parser.add_argument("--config", action="store_true", help="Show configuration")
     parser.add_argument("--history", action="store_true", help="Show processed articles")
@@ -771,11 +775,14 @@ def main():
     markets = [args.market] if args.market else config["markets"]
     keywords = [k.strip().lower() for k in args.keywords.split(",")] if args.keywords else config["keywords"]
 
+    # Default to dry-run unless --live is explicitly passed
+    dry_run = not args.live
+
     run_scan(
         feeds=feeds,
         markets=markets,
         keywords=keywords,
-        dry_run=args.dry_run,
+        dry_run=dry_run,
         scan_only=args.scan_only,
     )
 

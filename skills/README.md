@@ -4,11 +4,13 @@ Official trading skills for OpenClaw, powered by the Simmer SDK.
 
 ## Available Skills
 
-| Skill | Description | Cron |
-|-------|-------------|------|
-| [weather](./weather/) | Trade Polymarket weather markets using NOAA forecasts | Every 2h |
-| [copytrading](./copytrading/) | Mirror positions from top Polymarket traders | Every 4h |
-| [signalsniper](./signalsniper/) | Trade on breaking news from RSS feeds | Every 15m |
+| Skill | Description | Default |
+|-------|-------------|---------|
+| [weather](./weather/) | Trade Polymarket weather markets using NOAA forecasts | Dry run, cron off |
+| [copytrading](./copytrading/) | Mirror positions from top Polymarket traders | Dry run, cron off |
+| [signalsniper](./signalsniper/) | Trade on breaking news from RSS feeds | Dry run, cron off |
+
+All skills run in **dry-run mode by default** (no trades). Pass `--live` to enable real trading. Cron scheduling is disabled by default — enable it after verifying the skill works as expected.
 
 ## Installation
 

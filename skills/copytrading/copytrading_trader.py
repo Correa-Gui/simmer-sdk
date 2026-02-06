@@ -14,8 +14,8 @@ Exit handling:
 - SDK Risk Management: Stop-loss/take-profit (generic safety net) - coming soon
 
 Usage:
-    python copytrading_trader.py              # Run copytrading scan (buy only)
-    python copytrading_trader.py --dry-run    # Show what would trade
+    python copytrading_trader.py              # Dry run (show what would trade)
+    python copytrading_trader.py --live       # Execute real trades
     python copytrading_trader.py --positions  # Show current positions
     python copytrading_trader.py --config     # Show configuration
     python copytrading_trader.py --wallets 0x... # Override wallets for this run
@@ -251,7 +251,7 @@ def fetch_wallet_positions(wallet: str) -> list:
     return []
 
 
-def execute_copytrading(wallets: list, top_n: int = None, max_usd: float = 50.0, dry_run: bool = False, buy_only: bool = True, detect_whale_exits: bool = False, max_trades: int = None) -> dict:
+def execute_copytrading(wallets: list, top_n: int = None, max_usd: float = 50.0, dry_run: bool = True, buy_only: bool = True, detect_whale_exits: bool = False, max_trades: int = None) -> dict:
     """
     Execute copytrading via Simmer SDK.
 
@@ -283,7 +283,7 @@ def execute_copytrading(wallets: list, top_n: int = None, max_usd: float = 50.0,
     return api_request("POST", "/api/sdk/copytrading/execute", data)
 
 
-def run_copytrading(wallets: list, top_n: int = None, max_usd: float = 50.0, dry_run: bool = False, buy_only: bool = True, detect_whale_exits: bool = False):
+def run_copytrading(wallets: list, top_n: int = None, max_usd: float = 50.0, dry_run: bool = True, buy_only: bool = True, detect_whale_exits: bool = False):
     """
     Run copytrading scan and execute trades.
 
@@ -320,7 +320,7 @@ def run_copytrading(wallets: list, top_n: int = None, max_usd: float = 50.0, dry
     print(f"  Whale exits: {'Enabled (sell when whale exits)' if detect_whale_exits else 'Disabled'}")
 
     if dry_run:
-        print("\n🔒 DRY RUN MODE - No trades will be executed")
+        print("\n  [DRY RUN] No trades will be executed. Use --live to enable trading.")
 
     # Execute copytrading via SDK
     print("\n📡 Calling Simmer API...")
@@ -471,9 +471,14 @@ def main():
         description="Simmer Copytrading - Mirror positions from Polymarket whales"
     )
     parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Execute real trades (default is dry-run)"
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Show what would trade without executing"
+        help="(Default) Show what would trade without executing"
     )
     parser.add_argument(
         "--positions",
@@ -577,12 +582,15 @@ def main():
     # Get max_usd (from args or env)
     max_usd = args.max_usd if args.max_usd else COPYTRADING_MAX_USD
 
+    # Default to dry-run unless --live is explicitly passed
+    dry_run = not args.live
+
     # Run copytrading
     run_copytrading(
         wallets=wallets,
         top_n=top_n,
         max_usd=max_usd,
-        dry_run=args.dry_run,
+        dry_run=dry_run,
         buy_only=not args.rebalance,  # Default buy_only=True, --rebalance sets it to False
         detect_whale_exits=args.whale_exits
     )
