@@ -29,15 +29,24 @@ class Market:
 
 @dataclass
 class Position:
-    """Represents a position in a market."""
+    """Represents a position in a market.
+    
+    For simmer venue: sim_balance tracks remaining paper trading balance.
+    For polymarket venue: cost_basis tracks real USDC spent.
+    """
     market_id: str
     question: str
     shares_yes: float
     shares_no: float
-    sim_balance: float
     current_value: float
     pnl: float
     status: str
+    venue: str = "simmer"  # "simmer" or "polymarket"
+    sim_balance: Optional[float] = None  # Simmer only: remaining $SIM balance
+    cost_basis: Optional[float] = None  # Polymarket only: USDC spent
+    avg_cost: Optional[float] = None  # Average cost per share
+    current_price: Optional[float] = None  # Current market price
+    sources: Optional[List[str]] = None  # Trade sources (e.g., ["sdk:weather"])
 
 
 @dataclass
@@ -591,28 +600,44 @@ class SimmerClient:
             error=data.get("error")
         )
 
-    def get_positions(self) -> List[Position]:
+    def get_positions(self, venue: Optional[str] = None, source: Optional[str] = None) -> List[Position]:
         """
         Get all positions for this agent.
+
+        Args:
+            venue: Filter by venue ("simmer" or "polymarket"). If None, returns both.
+            source: Filter by trade source (e.g., "weather", "copytrading"). Partial match.
 
         Returns:
             List of Position objects with P&L info
         """
-        data = self._request("GET", "/api/sdk/positions")
+        params = {}
+        if venue:
+            params["venue"] = venue
+        if source:
+            params["source"] = source
+            
+        data = self._request("GET", "/api/sdk/positions", params=params if params else None)
 
-        return [
-            Position(
+        positions = []
+        for p in data.get("positions", []):
+            pos_venue = p.get("venue", "simmer")
+            positions.append(Position(
                 market_id=p["market_id"],
-                question=p["question"],
-                shares_yes=p["shares_yes"],
-                shares_no=p["shares_no"],
-                sim_balance=p["sim_balance"],
-                current_value=p["current_value"],
-                pnl=p["pnl"],
-                status=p["status"]
-            )
-            for p in data.get("positions", [])
-        ]
+                question=p.get("question", ""),
+                shares_yes=p.get("shares_yes", 0),
+                shares_no=p.get("shares_no", 0),
+                current_value=p.get("current_value", 0),
+                pnl=p.get("pnl", 0),
+                status=p.get("status", "active"),
+                venue=pos_venue,
+                sim_balance=p.get("sim_balance"),  # Only present for simmer
+                cost_basis=p.get("cost_basis"),  # Only present for polymarket
+                avg_cost=p.get("avg_cost"),
+                current_price=p.get("current_price"),
+                sources=p.get("sources"),
+            ))
+        return positions
 
     def get_total_pnl(self) -> float:
         """Get total unrealized P&L across all positions."""
