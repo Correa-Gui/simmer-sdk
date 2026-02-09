@@ -32,6 +32,9 @@ from datetime import datetime
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
+# Force line-buffered stdout so output is visible in non-TTY environments (cron, Docker, OpenClaw)
+sys.stdout.reconfigure(line_buffering=True)
+
 # Optional: Trade Journal integration for tracking
 try:
     from tradejournal import log_trade

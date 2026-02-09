@@ -28,6 +28,9 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+
+# Force line-buffered stdout so output is visible in non-TTY environments (cron, Docker, OpenClaw)
+sys.stdout.reconfigure(line_buffering=True)
 from urllib.parse import urlencode
 
 

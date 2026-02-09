@@ -29,6 +29,9 @@ from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 
+# Force line-buffered stdout so output is visible in non-TTY environments (cron, Docker, OpenClaw)
+sys.stdout.reconfigure(line_buffering=True)
+
 # =============================================================================
 # Configuration
 # =============================================================================

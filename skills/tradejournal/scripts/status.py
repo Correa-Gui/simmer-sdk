@@ -2,6 +2,10 @@
 """Quick status check for Trade Journal."""
 
 import sys
+
+# Force line-buffered stdout so output is visible in non-TTY environments (cron, Docker, OpenClaw)
+sys.stdout.reconfigure(line_buffering=True)
+
 from pathlib import Path
 
 # Add parent directory to path for imports

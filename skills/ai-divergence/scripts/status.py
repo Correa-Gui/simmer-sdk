@@ -12,6 +12,9 @@ import json
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
+# Force line-buffered stdout so output is visible in non-TTY environments (cron, Docker, OpenClaw)
+sys.stdout.reconfigure(line_buffering=True)
+
 SIMMER_API_URL = os.environ.get("SIMMER_API_URL", "https://api.simmer.markets")
 
 

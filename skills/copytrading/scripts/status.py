@@ -16,6 +16,9 @@ import argparse
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
 
+# Force line-buffered stdout so output is visible in non-TTY environments (cron, Docker, OpenClaw)
+sys.stdout.reconfigure(line_buffering=True)
+
 SIMMER_API_BASE = "https://api.simmer.markets"
 
 def api_request(api_key: str, endpoint: str) -> dict:

@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+
+# Force line-buffered stdout so output is visible in non-TTY environments (cron, Docker, OpenClaw)
+sys.stdout.reconfigure(line_buffering=True)
 from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
