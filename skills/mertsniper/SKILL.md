@@ -5,7 +5,7 @@ description: Near-expiry conviction trading on Polymarket. Snipe markets about t
 metadata: {"clawdbot":{"emoji":"🎯","requires":{"env":["SIMMER_API_KEY"]},"cron":null,"autostart":false}}
 authors:
   - Simmer (@simmer_markets)
-attribution: "Strategy inspired by @0xMert_ — https://x.com/mert/status/2020216613279060433"
+attribution: "Strategy inspired by @mert — https://x.com/mert/status/2020216613279060433"
 version: "1.0.0"
 ---
 
@@ -13,7 +13,7 @@ version: "1.0.0"
 
 Near-expiry conviction trading on Polymarket. Snipe markets about to resolve when the odds are heavily skewed.
 
-> Strategy by [@0xMert_](https://x.com/mert/status/2020216613279060433) — filter by topic, cap your bets, wait until near expiry, and only trade strong splits.
+> Strategy by [@mert](https://x.com/mert/status/2020216613279060433) — filter by topic, cap your bets, wait until near expiry, and only trade strong splits.
 
 ## When to Use This Skill
 

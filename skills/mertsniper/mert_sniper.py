@@ -3,7 +3,7 @@
 Mert Sniper - Near-Expiry Conviction Trading
 
 Snipe Polymarket markets about to resolve when odds are heavily skewed.
-Strategy by @0xMert_: https://x.com/mert/status/2020216613279060433
+Strategy by @mert: https://x.com/mert/status/2020216613279060433
 
 Usage:
     python mert_sniper.py              # Dry run (show opportunities, no trades)
