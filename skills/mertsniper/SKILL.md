@@ -1,6 +1,6 @@
 ---
 name: simmer-mertsniper
-displayName: Mert Sniper
+displayName: Polymarket Mert Sniper
 description: Near-expiry conviction trading on Polymarket. Snipe markets about to resolve when the odds are heavily skewed. Filter by topic, cap your bets, and only trade strong splits close to deadline.
 metadata: {"clawdbot":{"emoji":"🎯","requires":{"env":["SIMMER_API_KEY"]},"cron":null,"autostart":false}}
 authors:
@@ -16,6 +16,8 @@ Near-expiry conviction trading on Polymarket. Snipe markets about to resolve whe
 > Strategy by [@0xMert_](https://x.com/mert/status/2020216613279060433) — filter by topic, cap your bets, wait until near expiry, and only trade strong splits.
 
 ## When to Use This Skill
+
+> **Polymarket only.** All trades execute on Polymarket with real USDC. Use `--live` for real trades, dry-run is the default.
 
 Use this skill when the user wants to:
 - Trade markets that are about to resolve (last-minute conviction bets)
