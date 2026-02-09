@@ -213,13 +213,14 @@ def check_context_safeguards(context):
     return True, reasons
 
 
-def execute_trade(api_key, market_id, side, amount):
+def execute_trade(api_key, market_id, side, amount, reasoning=""):
     return sdk_request(api_key, "POST", "/api/sdk/trade", {
         "market_id": market_id,
         "side": side,
         "amount": amount,
         "venue": "polymarket",
         "source": TRADE_SOURCE,
+        "reasoning": reasoning,
     })
 
 
@@ -465,12 +466,14 @@ def run_mert_strategy(dry_run=True, positions_only=False, show_config=False,
             print(f"     Skip: ${position_size:.2f} too small for {MIN_SHARES_PER_ORDER} shares at ${side_price:.2f}")
             continue
 
+        reasoning = f"Near-expiry snipe: {side.upper()} at {side_price:.0%} with {format_duration(mins_left)} to resolution"
+
         if dry_run:
             est_shares = position_size / side_price
             print(f"     [DRY RUN] Would buy ${position_size:.2f} on {side.upper()} (~{est_shares:.1f} shares)")
         else:
             print(f"     Executing trade...")
-            result = execute_trade(api_key, market_id, side, position_size)
+            result = execute_trade(api_key, market_id, side, position_size, reasoning=reasoning)
 
             if result.get("success"):
                 trades_executed += 1
