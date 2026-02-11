@@ -525,6 +525,30 @@ portfolio = client.get_portfolio()
 my_positions = portfolio['by_source'].get('sdk:my-strategy', {})
 ```
 
+### Direct Polymarket Queries (Optional)
+
+For high-frequency price checks, query Polymarket directly using `polymarket_token_id` from the market response:
+
+```python
+import requests
+
+# Get token IDs from Simmer (enriched with divergence, scores)
+markets = client.get_markets(status="active")
+token_id = markets[0].polymarket_token_id
+
+# Poll midpoint price directly (no auth, very fast)
+mid = requests.get(f"https://clob.polymarket.com/midpoint/{token_id}").json()
+print(f"Midpoint: {mid['mid']}")
+
+# Get positions directly (by wallet address)
+positions = requests.get(f"https://data-api.polymarket.com/positions?user={wallet_address}").json()
+
+# Get PnL / leaderboard stats
+stats = requests.get(f"https://data-api.polymarket.com/v1/leaderboard?user={wallet_address}&timePeriod=ALL").json()
+```
+
+Always use Simmer for trades (`client.trade()`), context (`client.get_market_context()`), and briefings (`client.get_briefing()`). See [docs.md](https://simmer.markets/docs.md) for full direct access details.
+
 ## API Reference
 
 ### SimmerClient
