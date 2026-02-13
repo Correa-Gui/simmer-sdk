@@ -287,6 +287,7 @@ class SimmerClient:
             if linked_address and linked_address.lower() == self._wallet_address.lower():
                 self._wallet_linked = True
                 logger.debug("Wallet %s already linked", self._wallet_address[:10] + "...")
+                self._ensure_clob_credentials()
                 return
         except Exception as e:
             logger.debug("Could not check wallet link status: %s", e)
@@ -298,11 +299,64 @@ class SimmerClient:
             if result.get("success"):
                 self._wallet_linked = True
                 logger.info("Wallet linked successfully")
+                # Derive and register CLOB credentials right after linking
+                self._ensure_clob_credentials()
             else:
                 logger.warning("Wallet linking returned: %s", result.get("error", "unknown error"))
         except Exception as e:
             # Log warning but don't fail - the trade API will return proper error
             logger.warning("Auto-link failed: %s. Trade may fail if wallet not linked.", e)
+
+        # For already-linked wallets, ensure CLOB credentials exist
+        if self._wallet_linked:
+            self._ensure_clob_credentials()
+
+    def _ensure_clob_credentials(self) -> None:
+        """
+        Derive and register Polymarket CLOB API credentials if not already done.
+
+        Uses py_clob_client to derive credentials from the private key, then
+        sends them to the backend for encrypted storage. One-time per wallet.
+        """
+        if not self._private_key or not self._wallet_address:
+            return
+
+        # Check if credentials already exist (settings returns this info indirectly —
+        # if we've traded successfully before, credentials exist)
+        # We use a flag to avoid re-deriving every session
+        if getattr(self, '_clob_creds_registered', False):
+            return
+
+        try:
+            from py_clob_client.client import ClobClient
+
+            client = ClobClient(
+                host="https://clob.polymarket.com",
+                key=self._private_key,
+                chain_id=137,
+                signature_type=0,  # EOA
+                funder=self._wallet_address
+            )
+
+            creds = client.create_or_derive_api_creds()
+
+            # Register with backend
+            self._request("POST", "/api/sdk/wallet/credentials", json={
+                "api_key": creds.api_key,
+                "api_secret": creds.api_secret,
+                "api_passphrase": creds.api_passphrase
+            })
+
+            self._clob_creds_registered = True
+            logger.info("CLOB credentials registered for wallet %s", self._wallet_address[:10] + "...")
+
+        except ImportError:
+            logger.warning(
+                "py-clob-client not installed — cannot derive CLOB credentials. "
+                "Install with: pip install py-clob-client"
+            )
+        except Exception as e:
+            logger.warning("Failed to derive/register CLOB credentials: %s", e)
 
     def _warn_approvals_once(self) -> None:
         """
