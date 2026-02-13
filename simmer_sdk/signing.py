@@ -184,7 +184,7 @@ def build_and_sign_order(
     order_dict = signed.dict()
 
     return SignedOrder(
-        salt=order_dict["salt"],
+        salt=str(order_dict["salt"]),
         maker=order_dict["maker"],
         signer=order_dict["signer"],
         taker=order_dict["taker"],
