@@ -100,7 +100,7 @@ def build_and_sign_order(
     try:
         from py_order_utils.builders import OrderBuilder
         from py_order_utils.signer import Signer
-        from py_order_utils.model import OrderData, EOA, POLY_PROXY, GNOSIS_SAFE, BUY, SELL
+        from py_order_utils.model import OrderData, EOA, POLY_PROXY, POLY_GNOSIS_SAFE as GNOSIS_SAFE, BUY, SELL
         from py_clob_client.config import get_contract_config
     except ImportError:
         raise ImportError(
