@@ -453,15 +453,20 @@ Pre-built trading strategies in [skills/](./skills/):
 
 | Skill | Description | Cron |
 |-------|-------------|------|
-| [Weather](./skills/weather/) | Trade Polymarket weather markets using NOAA forecasts | Every 2h |
-| [Copytrading](./skills/copytrading/) | Mirror positions from top Polymarket traders | Every 4h |
-| [Signal Sniper](./skills/signalsniper/) | Trade on breaking news from RSS feeds | Every 15m |
+| [Weather Trader](./skills/polymarket-weather-trader/) | Trade Polymarket weather markets using NOAA forecasts | Every 2h |
+| [Copytrading](./skills/polymarket-copytrading/) | Mirror positions from top Polymarket traders | Every 4h |
+| [Signal Sniper](./skills/polymarket-signal-sniper/) | Trade on breaking news from RSS feeds | Every 15m |
+| [Mert Sniper](./skills/polymarket-mert-sniper/) | Near-expiry conviction trading on Polymarket | Every 5m |
+| [AI Divergence](./skills/polymarket-ai-divergence/) | Surface markets where AI consensus diverges from odds | On demand |
+| [Fast Loop](./skills/polymarket-fast-loop/) | BTC fast market trades using Binance momentum | Every 5m |
+| [Trade Journal](./skills/prediction-trade-journal/) | Auto-log trades with calibration reports | Daily |
+| [x402 Payments](./skills/simmer-x402/) | Autonomous USDC payments for gated APIs | On demand |
 
 Install via ClawHub:
 ```bash
-clawhub install simmer-weather
-clawhub install simmer-copytrading
-clawhub install simmer-signalsniper
+clawhub install polymarket-weather-trader
+clawhub install polymarket-copytrading
+clawhub install polymarket-signal-sniper
 ```
 
 Skills require `SIMMER_API_KEY` from your dashboard.
