@@ -6,7 +6,7 @@ metadata: {"clawdbot":{"emoji":"🌡️","requires":{"env":["SIMMER_API_KEY"]},"
 authors:
   - Simmer (@simmer_markets)
 attribution: "Strategy inspired by gopfan2"
-version: "1.6.1"
+version: "1.7.1"
 ---
 
 # Polymarket Weather Trader
