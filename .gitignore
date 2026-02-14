@@ -1,3 +1,6 @@
+# Runtime state
+daily_spend.json
+
 # Python
 __pycache__/
 *.py[cod]
