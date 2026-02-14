@@ -63,20 +63,13 @@ USDC_ADDRESS = {
     "testnet": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
 }
 
-# Supported x402 networks (for filtering multi-chain 402 responses)
-SUPPORTED_NETWORKS = {
-    "base", "base-sepolia", "avalanche", "avalanche-fuji",
-    "eip155:8453", "eip155:84532", "eip155:43114", "eip155:43113",
-}
-
-
 # =============================================================================
 # Wallet
 # =============================================================================
 
 def get_wallet():
-    """Get wallet from EVM_PRIVATE_KEY env var."""
-    key = os.environ.get("EVM_PRIVATE_KEY")
+    """Get wallet Account from EVM_PRIVATE_KEY (or WALLET_PRIVATE_KEY) env var."""
+    key = os.environ.get("EVM_PRIVATE_KEY") or os.environ.get("WALLET_PRIVATE_KEY")
     if not key:
         print("Error: EVM_PRIVATE_KEY environment variable not set")
         print("Set your wallet private key: export EVM_PRIVATE_KEY=0x...")
@@ -90,81 +83,22 @@ def get_wallet():
         sys.exit(1)
 
 
-# =============================================================================
-# BaseOnlyTransport — filter unsupported chain payment options
-# =============================================================================
+def _get_x402_httpx_client():
+    """Create an x402-enabled httpx client using the v2 SDK."""
+    from x402 import x402Client
+    from x402.mechanisms.evm.signers import EthAccountSigner
+    from x402.mechanisms.evm.exact.register import register_exact_evm_client
+    from x402.http.x402_http_client import x402HTTPClient
+    from x402.http.clients.httpx import x402HttpxClient
 
-def _get_base_only_transport():
-    """Create transport that filters x402 402 responses to Base-only."""
-    import httpx
+    account = get_wallet()
+    signer = EthAccountSigner(account)
 
-    class BaseOnlyTransport(httpx.AsyncHTTPTransport):
-        def _filter_accepts(self, accepts):
-            original = len(accepts)
-            filtered = [
-                opt for opt in accepts
-                if opt.get("network") in SUPPORTED_NETWORKS
-            ]
-            return filtered, len(filtered) < original
+    client = x402Client()
+    register_exact_evm_client(client, signer)
 
-        async def handle_async_request(self, request):
-            import base64 as b64
-            response = await super().handle_async_request(request)
-            if response.status_code != 402:
-                return response
-
-            modified = False
-            new_headers = httpx.Headers(response.headers)
-            content = await response.aread()
-
-            # Filter x-payment header
-            x_payment = response.headers.get("x-payment")
-            if x_payment:
-                try:
-                    info = json.loads(b64.b64decode(x_payment).decode())
-                    if "accepts" in info and isinstance(info["accepts"], list):
-                        info["accepts"], was_filtered = self._filter_accepts(info["accepts"])
-                        if was_filtered:
-                            new_headers["x-payment"] = b64.b64encode(
-                                json.dumps(info).encode()
-                            ).decode()
-                            modified = True
-                except (json.JSONDecodeError, KeyError, ValueError):
-                    pass
-
-            # Filter/normalize response body
-            try:
-                body = json.loads(content.decode())
-                if "x402Version" not in body:
-                    body["x402Version"] = 1
-                    modified = True
-                if "accepts" in body and isinstance(body["accepts"], list):
-                    body["accepts"], was_filtered = self._filter_accepts(body["accepts"])
-                    if was_filtered:
-                        modified = True
-                if modified:
-                    content = json.dumps(body).encode()
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                pass
-
-            if modified:
-                from httpx._content import ByteStream
-                return httpx.Response(
-                    status_code=response.status_code,
-                    headers=new_headers,
-                    stream=ByteStream(content),
-                    extensions=response.extensions,
-                )
-
-            from httpx._content import ByteStream
-            return httpx.Response(
-                status_code=response.status_code,
-                headers=response.headers,
-                stream=ByteStream(content),
-                extensions=response.extensions,
-            )
-
-    return BaseOnlyTransport()
+    http_client = x402HTTPClient(client)
+    return x402HttpxClient(http_client, timeout=60)
 
 
 # =============================================================================
@@ -227,18 +161,13 @@ async def x402_fetch(url, method="GET", headers=None, body=None, max_usd=None):
         except (json.JSONDecodeError, KeyError, ValueError, IndexError):
             pass  # Can't parse payment info, let x402 SDK handle it
 
-        from x402.clients.httpx import x402HttpxClient
+        # Use v2 SDK — handles 402 payment automatically
+        httpx_client = _get_x402_httpx_client()
 
-        account = get_wallet()
-        transport = _get_base_only_transport()
-
-        async with httpx.AsyncClient(transport=transport, timeout=60) as base_client:
-            client = x402HttpxClient(base_client, account.key.hex())
-
-            if method.upper() == "GET":
-                response = await client.get(url, headers=req_headers)
-            else:
-                response = await client.post(url, headers=req_headers, json=body)
+        if method.upper() == "GET":
+            response = await httpx_client.get(url, headers=req_headers)
+        else:
+            response = await httpx_client.post(url, headers=req_headers, json=body)
 
         if response.status_code == 200:
             content_type = response.headers.get("content-type", "")
