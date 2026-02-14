@@ -79,6 +79,12 @@ python x402_cli.py fetch "https://api.kaito.ai/api/payg/mindshare?token=BTC&star
 python x402_cli.py fetch "https://api.kaito.ai/api/payg/sentiment?token=BTC&start_date=2026-02-13&end_date=2026-02-14" --json
 ```
 
+### Ask AlphaKek knowledge engine ($0.01 via x402)
+```bash
+python x402_cli.py fetch "https://api.alphakek.ai/x402/knowledge/ask" \
+  --method POST --body '{"question": "What is the current sentiment on BTC?", "search_mode": "fast"}' --json
+```
+
 ### Fetch CoinGecko price data ($0.01 via x402)
 ```bash
 python x402_cli.py fetch "https://pro-api.coingecko.com/api/v3/x402/simple/price?ids=bitcoin&vs_currencies=usd" --json
@@ -98,6 +104,7 @@ python x402_cli.py fetch "https://x402.simmer.markets/api/sdk/context/market-123
 | Kaito | `/api/payg/sentiment` | $0.02/data point | Token sentiment time series |
 | Kaito | `/api/payg/narrative_mindshare` | $0.02/data point | Narrative mindshare time series |
 | Kaito | `/api/payg/smart_followers` | $0.20/request | Smart follower metrics |
+| AlphaKek | `/x402/knowledge/ask` | $0.01/request | AI knowledge engine (POST, search_mode: fast/deep/ultrafast) |
 | CoinGecko | `/api/v3/x402/simple/price` | $0.01/request | Token price data |
 | Simmer | `/api/sdk/context/:id` | $0.005/request | Market context (rate limit bypass) |
 | Simmer | `/api/sdk/briefing` | $0.005/request | Portfolio briefing (rate limit bypass) |
