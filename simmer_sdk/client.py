@@ -303,19 +303,23 @@ class SimmerClient:
             logger.debug("Could not check wallet link status: %s", e)
 
         # Wallet not linked - attempt to link automatically
-        logger.info("Auto-linking wallet %s to Simmer account...", self._wallet_address[:10] + "...")
+        print(f"Auto-linking wallet {self._wallet_address[:10]}... to Simmer account...")
         try:
             result = self.link_wallet(signature_type=0)
             if result.get("success"):
                 self._wallet_linked = True
-                logger.info("Wallet linked successfully")
+                print("Wallet linked successfully")
                 # Derive and register CLOB credentials right after linking
                 self._ensure_clob_credentials()
             else:
-                logger.warning("Wallet linking returned: %s", result.get("error", "unknown error"))
+                error = result.get("error", "unknown error")
+                print(f"ERROR: Wallet linking failed: {error}")
+                raise RuntimeError(f"Wallet linking failed: {error}")
+        except RuntimeError:
+            raise
         except Exception as e:
-            # Log warning but don't fail - the trade API will return proper error
-            logger.warning("Auto-link failed: %s. Trade may fail if wallet not linked.", e)
+            print(f"ERROR: Auto-link failed: {e}. Call client.link_wallet() manually.")
+            raise RuntimeError(f"Wallet linking failed: {e}")
 
     def _ensure_clob_credentials(self) -> None:
         """
