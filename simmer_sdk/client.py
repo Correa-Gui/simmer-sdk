@@ -5,6 +5,7 @@ Simple Python client for trading on Simmer prediction markets.
 """
 
 import os
+import time
 import logging
 import requests
 from typing import Optional, List, Dict, Any
@@ -1729,7 +1730,7 @@ class SimmerClient:
         print(f"Found {len(missing_txs)} missing approvals (of {total} total). Setting them now...")
 
         # Fetch nonce and current gas price from public RPC
-        polygon_rpc = "https://1rpc.io/matic"
+        polygon_rpc = os.environ.get("POLYGON_RPC_URL", "https://polygon-rpc.com")
         nonce = None
         max_fee_per_gas = None
         max_priority_fee = None
@@ -1808,11 +1809,44 @@ class SimmerClient:
                 if tx_hash and nonce is not None:
                     nonce += 1
 
-                if result.get("success"):
-                    tx_status = result.get("status", "unknown")
-                    print(f"    Broadcast OK: {tx_hash[:18]}... ({tx_status})")
-                    set_count += 1
-                    details.append({"description": desc, "success": True, "tx_hash": tx_hash})
+                if result.get("success") and tx_hash:
+                    print(f"    Broadcast OK: {tx_hash[:18]}... waiting for confirmation")
+                    # Wait for on-chain confirmation before sending next tx.
+                    # Without this, Alchemy rejects subsequent txs with
+                    # "in-flight transaction limit reached for delegated accounts".
+                    confirmed = False
+                    reverted = False
+                    for attempt in range(30):  # ~60s max wait
+                        time.sleep(2)
+                        try:
+                            receipt_resp = requests.post(polygon_rpc, json={
+                                "jsonrpc": "2.0",
+                                "method": "eth_getTransactionReceipt",
+                                "params": [tx_hash],
+                                "id": 1,
+                            }, timeout=10)
+                            receipt = receipt_resp.json().get("result")
+                            if receipt:
+                                status_code = int(receipt.get("status", "0x0"), 16)
+                                if status_code == 1:
+                                    print(f"    Confirmed in block {int(receipt['blockNumber'], 16)}")
+                                    confirmed = True
+                                else:
+                                    print(f"    Reverted in block {int(receipt['blockNumber'], 16)}")
+                                    reverted = True
+                                break
+                        except Exception:
+                            pass  # Retry polling
+                    if reverted:
+                        failed += 1
+                        details.append({"description": desc, "success": False, "tx_hash": tx_hash, "error": "reverted"})
+                    elif not confirmed:
+                        print(f"    Warning: confirmation timeout, continuing anyway")
+                        set_count += 1
+                        details.append({"description": desc, "success": True, "tx_hash": tx_hash})
+                    else:
+                        set_count += 1
+                        details.append({"description": desc, "success": True, "tx_hash": tx_hash})
                 else:
                     error = result.get("error", "Unknown error")
                     print(f"    Failed: {error}")
