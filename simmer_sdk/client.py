@@ -331,11 +331,17 @@ class SimmerClient:
         if not self._private_key or not self._wallet_address:
             return
 
-        # Check if credentials already exist (settings returns this info indirectly —
-        # if we've traded successfully before, credentials exist)
-        # We use a flag to avoid re-deriving every session
         if getattr(self, '_clob_creds_registered', False):
             return
+
+        # Check server first to avoid unnecessary derivation + rate-limited POST
+        try:
+            check = self._request("GET", "/api/sdk/wallet/credentials/check")
+            if check.get("has_credentials"):
+                self._clob_creds_registered = True
+                return
+        except Exception:
+            pass  # Server might not have the endpoint yet — fall through to register
 
         try:
             from py_clob_client.client import ClobClient
