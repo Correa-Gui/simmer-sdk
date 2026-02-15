@@ -1588,7 +1588,7 @@ class SimmerClient:
 
         return result
 
-    def check_approvals(self, address: Optional[str] = None, no_cache: bool = False) -> Dict[str, Any]:
+    def check_approvals(self, address: Optional[str] = None, no_cache: bool = False, include_tx_params: bool = False) -> Dict[str, Any]:
         """
         Check Polymarket token approvals for a wallet.
 
@@ -1620,9 +1620,14 @@ class SimmerClient:
                 "or initialize client with private_key."
             )
 
-        path = f"/api/polymarket/allowances/{check_address}"
+        params = {}
         if no_cache:
-            path += "?no_cache=1"
+            params["no_cache"] = "1"
+        if include_tx_params:
+            params["include_tx_params"] = "1"
+        path = f"/api/polymarket/allowances/{check_address}"
+        if params:
+            path += "?" + "&".join(f"{k}={v}" for k, v in params.items())
         return self._request("GET", path)
 
     def ensure_approvals(self) -> Dict[str, Any]:
@@ -1712,8 +1717,9 @@ class SimmerClient:
         from .approvals import get_missing_approval_transactions, get_approval_transactions
 
         # Check current approval status (skip cache for fresh on-chain read)
+        # include_tx_params=True fetches nonce + gas from our Alchemy RPC server-side
         print("Checking current approvals...")
-        status = self.check_approvals(no_cache=True)
+        status = self.check_approvals(no_cache=True, include_tx_params=True)
         all_txs = get_approval_transactions()
         missing_txs = get_missing_approval_transactions(status)
 
@@ -1729,39 +1735,29 @@ class SimmerClient:
 
         print(f"Found {len(missing_txs)} missing approvals (of {total} total). Setting them now...")
 
-        # Fetch nonce and current gas price from public RPC
-        polygon_rpc = os.environ.get("POLYGON_RPC_URL", "https://polygon-rpc.com")
+        # Use nonce + gas price from server (fetched via Alchemy RPC)
         nonce = None
         max_fee_per_gas = None
         max_priority_fee = None
 
-        try:
-            # Batch: nonce + gas price in one round-trip
-            batch_resp = requests.post(polygon_rpc, json=[
-                {"jsonrpc": "2.0", "method": "eth_getTransactionCount", "params": [self._wallet_address, "pending"], "id": 1},
-                {"jsonrpc": "2.0", "method": "eth_gasPrice", "params": [], "id": 2},
-            ], timeout=10)
-            batch = batch_resp.json()
-            for item in batch:
-                if item.get("id") == 1:
-                    nonce = int(item.get("result", "0x0"), 16)
-                elif item.get("id") == 2:
-                    gas_price = int(item.get("result", "0x0"), 16)
-                    # Priority fee scales with gas (25% of current, min 30 gwei).
-                    # Fixed 30 gwei caused "replacement tx underpriced" when retrying
-                    # because Alchemy requires both fees to bump by 10%+.
-                    max_priority_fee = max(30_000_000_000, gas_price // 4)
-                    # Max fee at 2x current gas price (handles spikes during 9-tx batch)
-                    max_fee_per_gas = gas_price * 2
-            if max_fee_per_gas:
-                print(f"  Current gas price: {gas_price / 1e9:.0f} gwei, using max {max_fee_per_gas / 1e9:.0f} gwei")
-        except Exception as e:
-            logger.warning("Failed to fetch nonce/gas from RPC: %s", e)
+        tx_params = status.get("tx_params")
+        if tx_params:
+            nonce = tx_params.get("nonce")
+            gas_price = tx_params.get("gas_price")
+            if gas_price:
+                # Priority fee scales with gas (25% of current, min 30 gwei)
+                max_priority_fee = max(30_000_000_000, gas_price // 4)
+                # Max fee at 2x current gas price (handles spikes during 9-tx batch)
+                max_fee_per_gas = gas_price * 2
+                print(f"  Gas price: {gas_price / 1e9:.0f} gwei, using max {max_fee_per_gas / 1e9:.0f} gwei")
 
-        # Fallback gas values if RPC fetch failed
+        # Fallback gas values if server didn't return tx_params
         if not max_fee_per_gas:
             max_fee_per_gas = 100_000_000_000  # 100 gwei fallback
             max_priority_fee = 30_000_000_000  # 30 gwei fallback
+
+        # Public RPC fallback for receipt polling and nonce re-queries
+        polygon_rpc = os.environ.get("POLYGON_RPC_URL", "https://polygon-rpc.com")
 
         for i, tx_data in enumerate(missing_txs):
             desc = tx_data.get("description", f"Approval {i + 1}")
