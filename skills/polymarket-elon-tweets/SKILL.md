@@ -37,19 +37,24 @@ Polymarket runs weekly "How many tweets will Elon post?" events with range bucke
 
 When user asks to install or configure this skill:
 
-1. **Ask for Simmer API key**
+1. **Install the Simmer SDK**
+   ```bash
+   pip install simmer-sdk
+   ```
+
+2. **Ask for Simmer API key**
    - They can get it from simmer.markets/dashboard → SDK tab
    - Store in environment as `SIMMER_API_KEY`
 
-2. **Ask about settings** (or confirm defaults)
+3. **Ask about settings** (or confirm defaults)
    - Max bucket sum: Combined price threshold (default 90¢)
    - Max position: Amount per bucket (default $5.00)
    - Bucket spread: How many neighbors to buy (default 1 = center ± 1)
    - Exit threshold: When to sell (default 65¢)
 
-3. **Save settings to config.json or environment variables**
+4. **Save settings to config.json or environment variables**
 
-4. **Set up cron** (disabled by default — user must enable scheduling)
+5. **Set up cron** (disabled by default — user must enable scheduling)
 
 ## Configuration
 
