@@ -566,7 +566,7 @@ class SimmerClient:
             # Sign order locally
             signed_order = self._build_signed_order(
                 market_id, side, amount if not is_sell else 0,
-                shares if is_sell else 0, action
+                shares if is_sell else 0, action, order_type
             )
             if signed_order:
                 payload["signed_order"] = signed_order
@@ -1292,7 +1292,8 @@ class SimmerClient:
         side: str,
         amount: float = 0,
         shares: float = 0,
-        action: str = "buy"
+        action: str = "buy",
+        order_type: str = "FAK",
     ) -> Optional[Dict[str, Any]]:
         """
         Build and sign a Polymarket order locally.
@@ -1370,6 +1371,7 @@ class SimmerClient:
             signature_type=0,  # EOA
             tick_size=tick_size,
             fee_rate_bps=fee_rate_bps,
+            order_type=order_type,
         )
 
         return signed.to_dict()

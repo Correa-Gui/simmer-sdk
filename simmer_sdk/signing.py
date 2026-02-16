@@ -71,6 +71,7 @@ def build_and_sign_order(
     signature_type: int = 0,  # 0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE
     tick_size: float = 0.01,
     fee_rate_bps: int = 0,
+    order_type: str = "FAK",  # "FAK", "FOK", "GTC", "GTD"
 ) -> SignedOrder:
     """
     Build and sign a Polymarket order.
@@ -128,8 +129,11 @@ def build_and_sign_order(
         side, size, price, round_config
     )
 
-    # CLOB enforces maker max 2 decimals for FAK/FOK (raw divisible by 10000)
-    maker_raw = (maker_raw // 10000) * 10000
+    # CLOB enforces maker max 2 decimals for FAK/FOK (market orders).
+    # GTC/GTD (limit orders) need full precision from get_order_amounts().
+    # See _dev/active/_polymarket-rounding-precision/ for full history.
+    if order_type in ("FAK", "FOK"):
+        maker_raw = int(round(maker_raw / 1e6, 2) * 1e6)
 
     # Check minimum order size
     shares_raw = taker_raw if side == "BUY" else maker_raw
