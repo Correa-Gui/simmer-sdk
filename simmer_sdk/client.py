@@ -1122,15 +1122,26 @@ class SimmerClient:
 
         # Validate unsigned tx before signing
         _REDEEM_CONTRACT_WHITELIST = {
-            "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045".lower(),  # CTF
-            "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296".lower(),  # NegRiskAdapter
+            "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045".lower(): "0x01b7037c",   # CTF: redeemPositions(address,bytes32,bytes32,uint256[])
+            "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296".lower(): "0xdbeccb23",   # NegRiskAdapter: redeemPositions(bytes32,uint256[])
         }
         tx_to = unsigned_tx.get("to", "")
         if not tx_to or tx_to.lower() not in _REDEEM_CONTRACT_WHITELIST:
-            return {"success": False, "error": f"Unsigned tx targets unknown contract: {tx_to}"}
+            return {"success": False, "error": "Unsigned tx targets unknown contract"}
         tx_from = unsigned_tx.get("from", "")
         if tx_from and tx_from.lower() != self._wallet_address.lower():
-            return {"success": False, "error": f"Unsigned tx is for wrong wallet ({tx_from}), expected {self._wallet_address}"}
+            return {"success": False, "error": "Unsigned tx is for wrong wallet"}
+
+        # Validate calldata targets expected function selector
+        tx_data = unsigned_tx.get("data", "")
+        expected_selector = _REDEEM_CONTRACT_WHITELIST[tx_to.lower()]
+        if not tx_data or not tx_data.lower().startswith(expected_selector):
+            return {"success": False, "error": f"Unsigned tx has unexpected function selector (expected {expected_selector})"}
+
+        # Cap gas limit to prevent POL drain
+        tx_gas = int(unsigned_tx.get("gas", 200000))
+        if tx_gas > 500_000:
+            return {"success": False, "error": f"Gas limit too high ({tx_gas}), max 500000"}
 
         print(f"  Signing redemption transaction locally...")
 
@@ -1152,14 +1163,13 @@ class SimmerClient:
         priority_fee = max(30_000_000_000, gas_price // 4)
         max_fee = gas_price * 2
 
-        tx_data = unsigned_tx.get("data", "")
         tx_fields = {
             "to": tx_to,
             "data": bytes.fromhex(tx_data[2:] if tx_data.startswith("0x") else tx_data),
             "value": 0,
             "chainId": 137,
             "nonce": nonce,
-            "gas": int(unsigned_tx.get("gas", 200000)),
+            "gas": tx_gas,
             "maxFeePerGas": max_fee,
             "maxPriorityFeePerGas": priority_fee,
             "type": 2,

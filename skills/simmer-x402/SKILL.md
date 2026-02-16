@@ -172,6 +172,12 @@ data = await x402_fetch("https://api.kaito.ai/api/payg/mindshare?token=BTC")
 - Max payment safety cap prevents accidental overspend
 - Dry-run mode to preview payments before executing
 
+**Private key safety:**
+- Store your key in a `.env` file, never pass it inline in shell history
+- Ensure `.env` is in your `.gitignore` — never commit private keys to git
+- Use a dedicated hot wallet with limited funds, not your main wallet
+- Rotate the key immediately if you suspect it was exposed
+
 ## Troubleshooting
 
 **"EVM_PRIVATE_KEY not set"**
