@@ -1878,7 +1878,7 @@ class SimmerClient:
                         "value": 0,
                         "chainId": 137,
                         "nonce": nonce,
-                        "gas": 80000,  # Approvals use ~46k gas, 80k covers proxy contracts
+                        "gas": 100000,  # Match managed wallet path; USDC.e proxy needs more than 80k
                         "maxFeePerGas": max_fee,
                         "maxPriorityFeePerGas": priority_fee,
                         "type": 2,  # EIP-1559
