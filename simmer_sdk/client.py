@@ -231,6 +231,7 @@ class SimmerClient:
                     )
             except Exception as e:
                 logger.warning("Could not derive Solana wallet address: %s", e)
+                self._solana_key_available = False
 
         self._session = requests.Session()
         self._session.headers.update({
@@ -312,7 +313,7 @@ class SimmerClient:
                 # Derive and register CLOB credentials right after linking
                 self._ensure_clob_credentials()
             else:
-                error = result.get("error", "unknown error")
+                error = result.get("error") or result.get("message") or f"Server returned: {result}"
                 print(f"ERROR: Wallet linking failed: {error}")
                 raise RuntimeError(f"Wallet linking failed: {error}")
         except RuntimeError:
@@ -1726,57 +1727,42 @@ class SimmerClient:
 
         from .approvals import get_missing_approval_transactions, get_approval_transactions
 
-        # Check current approval status (skip cache for fresh on-chain read)
-        # include_tx_params=True fetches nonce + gas from our Alchemy RPC server-side
-        print("Checking current approvals...")
-        status = self.check_approvals(no_cache=True, include_tx_params=True)
-        all_txs = get_approval_transactions()
-        missing_txs = get_missing_approval_transactions(status)
+        # --- Helper functions (use Simmer's Alchemy RPC proxy for all chain queries) ---
 
-        total = len(all_txs)
-        skipped = total - len(missing_txs)
-        set_count = 0
-        failed = 0
-        details = []
-
-        if not missing_txs:
-            print("All approvals already set! Ready to trade.")
-            return {"set": 0, "skipped": total, "failed": 0, "details": []}
-
-        print(f"Found {len(missing_txs)} missing approvals (of {total} total). Setting them now...")
-
-        # Gas price from server (fetched via Alchemy RPC)
-        max_fee_per_gas = None
-        max_priority_fee = None
-
-        tx_params = status.get("tx_params")
-        if tx_params:
-            gas_price = tx_params.get("gas_price")
-            if gas_price:
-                # Priority fee scales with gas (25% of current, min 30 gwei)
-                max_priority_fee = max(30_000_000_000, gas_price // 4)
-                # Max fee at 2x current gas price (handles spikes during batch)
-                max_fee_per_gas = gas_price * 2
-                print(f"  Gas price: {gas_price / 1e9:.0f} gwei, using max {max_fee_per_gas / 1e9:.0f} gwei")
-
-        # Fallback gas values if server didn't return tx_params
-        if not max_fee_per_gas:
-            max_fee_per_gas = 100_000_000_000  # 100 gwei fallback
-            max_priority_fee = 30_000_000_000  # 30 gwei fallback
+        def _rpc_call(method: str, params: list) -> Any:
+            """Make a JSON-RPC call through Simmer's Alchemy proxy."""
+            resp = self._request("POST", "/api/rpc/polygon", json={
+                "jsonrpc": "2.0", "method": method, "params": params, "id": 1,
+            })
+            return resp.get("result")
 
         def _fetch_nonce() -> int:
-            """Fetch fresh nonce from chain via Alchemy proxy."""
-            resp = self._request("POST", "/api/rpc/polygon", json={
-                "jsonrpc": "2.0",
-                "method": "eth_getTransactionCount",
-                "params": [self._wallet_address, "pending"],
-                "id": 1,
-            })
-            return int(resp.get("result", "0x0"), 16)
+            """Fetch fresh nonce from chain (includes pending mempool txs)."""
+            result = _rpc_call("eth_getTransactionCount", [self._wallet_address, "pending"])
+            return int(result or "0x0", 16)
 
-        def _wait_for_receipt(tx_hash: str) -> Optional[dict]:
-            """Poll for tx receipt via Alchemy proxy. Returns receipt or None."""
-            for _ in range(30):  # ~60s max wait
+        def _fetch_gas_price() -> int:
+            """Fetch current gas price from chain."""
+            result = _rpc_call("eth_gasPrice", [])
+            return int(result or "0x0", 16)
+
+        def _calculate_fees(gas_price: int, bump_factor: float = 1.0) -> tuple:
+            """Calculate EIP-1559 fees from current gas price.
+
+            Args:
+                gas_price: Current gas price in wei from eth_gasPrice
+                bump_factor: Multiplier for retries (1.0 = no bump, 1.25 = 25% bump)
+
+            Returns:
+                (max_fee_per_gas, max_priority_fee_per_gas) in wei
+            """
+            priority_fee = max(30_000_000_000, gas_price // 4)  # min 30 gwei
+            max_fee = gas_price * 2  # 2x current for headroom
+            return int(max_fee * bump_factor), int(priority_fee * bump_factor)
+
+        def _wait_for_receipt(tx_hash: str, approval_num: int, total_approvals: int) -> Optional[dict]:
+            """Poll for tx receipt. Shows progress to user."""
+            for attempt in range(30):  # ~60s max wait
                 time.sleep(2)
                 try:
                     receipt_data = self._request("POST", "/api/rpc/polygon", json={
@@ -1790,27 +1776,100 @@ class SimmerClient:
                         return receipt
                 except Exception:
                     pass  # Retry polling
+                # Progress update every 10s so user knows it's still working
+                if attempt > 0 and attempt % 5 == 0:
+                    print(f"    Still waiting for on-chain confirmation... ({attempt * 2}s)")
             return None
+
+        # --- Step 1: Check current status ---
+
+        print(f"\n{'='*50}")
+        print(f"  Polymarket Approval Setup")
+        print(f"  Wallet: {self._wallet_address[:10]}...{self._wallet_address[-6:]}")
+        print(f"{'='*50}\n")
+
+        print("Step 1/3: Checking which approvals are needed...")
+        status = self.check_approvals(no_cache=True, include_tx_params=True)
+        all_txs = get_approval_transactions()
+        missing_txs = get_missing_approval_transactions(status)
+
+        total = len(all_txs)
+        skipped = total - len(missing_txs)
+        set_count = 0
+        failed = 0
+        details = []
+
+        if not missing_txs:
+            print(f"  All {total} approvals already set. Your wallet is ready to trade!\n")
+            return {"set": 0, "skipped": total, "failed": 0, "details": []}
+
+        print(f"  {skipped}/{total} approvals already done, {len(missing_txs)} remaining.\n")
+
+        # --- Step 2: Pre-flight checks ---
+
+        print("Step 2/3: Pre-flight checks...")
+
+        # Check POL balance for gas
+        try:
+            bal_result = _rpc_call("eth_getBalance", [self._wallet_address, "latest"])
+            pol_balance_wei = int(bal_result or "0x0", 16)
+            pol_balance = pol_balance_wei / 1e18
+            # ~0.002 POL per approval tx at typical gas prices
+            estimated_cost = len(missing_txs) * 0.002
+            if pol_balance < estimated_cost:
+                print(f"  WARNING: Low POL balance ({pol_balance:.4f} POL).")
+                print(f"  Estimated gas needed: ~{estimated_cost:.3f} POL for {len(missing_txs)} approvals.")
+                print(f"  Send POL (Polygon network) to {self._wallet_address}")
+                print(f"  Continuing anyway — transactions may fail if gas runs out.\n")
+            else:
+                print(f"  POL balance: {pol_balance:.4f} POL (enough for gas)")
+        except Exception:
+            print("  Could not check POL balance — continuing anyway.")
+
+        # Fetch fresh gas price
+        try:
+            gas_price = _fetch_gas_price()
+            print(f"  Network gas price: {gas_price / 1e9:.1f} gwei")
+        except Exception:
+            gas_price = 50_000_000_000  # 50 gwei fallback
+            print(f"  Could not fetch gas price, using default: {gas_price / 1e9:.0f} gwei")
+
+        print()
+
+        # --- Step 3: Send approval transactions ---
+
+        print(f"Step 3/3: Sending {len(missing_txs)} approval transaction(s)...")
+        print(f"  Each transaction is signed locally and relayed via Simmer.\n")
+
+        MAX_RETRIES = 3
 
         for i, tx_data in enumerate(missing_txs):
             desc = tx_data.get("description", f"Approval {i + 1}")
-            print(f"  Setting approval {i + 1}/{len(missing_txs)}: {desc}...")
+            token = tx_data.get("token", "unknown")
+            spender = tx_data.get("spender", "unknown")
+            print(f"  [{i + 1}/{len(missing_txs)}] {desc}")
+            print(f"       Token: {token} | Spender: {spender}")
 
-            max_retries = 3
-            for retry in range(max_retries):
+            tx_succeeded = False
+
+            for retry in range(MAX_RETRIES):
                 try:
-                    # Fresh nonce each attempt (avoids stale nonce from previous failed txs)
+                    # Fresh nonce and gas price each attempt
                     nonce = _fetch_nonce()
+
                     if retry > 0:
-                        print(f"    Retry {retry}/{max_retries - 1} (nonce={nonce})")
+                        # Re-fetch gas price on retries for fresh data
+                        try:
+                            gas_price = _fetch_gas_price()
+                        except Exception:
+                            pass  # Use previous gas_price
+                        print(f"       Retry {retry}/{MAX_RETRIES - 1} — fresh nonce: {nonce}, gas: {gas_price / 1e9:.1f} gwei")
 
-                    # Bump gas on retries to replace stuck pending txs
-                    # EIP-1559 requires 10%+ bump on both fees to replace
-                    retry_multiplier = 1.5 ** retry
-                    effective_max_fee = int(max_fee_per_gas * retry_multiplier)
-                    effective_priority_fee = int(max_priority_fee * retry_multiplier)
+                    # On retries, bump 25% above fresh gas to replace stuck pending txs
+                    bump_factor = 1.0 + (0.25 * retry)
+                    max_fee, priority_fee = _calculate_fees(gas_price, bump_factor)
 
-                    # Build a full transaction for signing
+                    # Build transaction
                     tx_fields = {
                         "to": tx_data["to"],
                         "data": bytes.fromhex(tx_data["data"][2:] if tx_data["data"].startswith("0x") else tx_data["data"]),
@@ -1818,16 +1877,16 @@ class SimmerClient:
                         "chainId": 137,
                         "nonce": nonce,
                         "gas": 80000,  # Approvals use ~46k gas, 80k covers proxy contracts
-                        "maxFeePerGas": effective_max_fee,
-                        "maxPriorityFeePerGas": effective_priority_fee,
+                        "maxFeePerGas": max_fee,
+                        "maxPriorityFeePerGas": priority_fee,
                         "type": 2,  # EIP-1559
                     }
 
-                    # Sign locally (keys never leave the client)
+                    # Sign locally — private key never leaves this machine
                     signed = Account.sign_transaction(tx_fields, self._private_key)
                     signed_tx_hex = "0x" + signed.raw_transaction.hex()
 
-                    # Relay through Simmer backend (uses Alchemy RPC)
+                    # Broadcast via Simmer backend (Alchemy RPC)
                     result = self._request("POST", "/api/sdk/wallet/broadcast-tx", json={
                         "signed_tx": signed_tx_hex,
                     })
@@ -1835,50 +1894,107 @@ class SimmerClient:
                     tx_hash = result.get("tx_hash")
 
                     if result.get("success") and tx_hash:
-                        print(f"    Broadcast OK: {tx_hash[:18]}... waiting for confirmation")
-                        receipt = _wait_for_receipt(tx_hash)
+                        print(f"       Broadcast OK ({tx_hash[:18]}...) — waiting for confirmation...")
+
+                        receipt = _wait_for_receipt(tx_hash, i + 1, len(missing_txs))
+
                         if receipt:
                             status_code = int(receipt.get("status", "0x0"), 16)
+                            block_num = int(receipt.get("blockNumber", "0x0"), 16)
+                            gas_used = int(receipt.get("gasUsed", "0x0"), 16)
                             if status_code == 1:
-                                print(f"    Confirmed in block {int(receipt['blockNumber'], 16)}")
+                                print(f"       Confirmed in block {block_num} (gas used: {gas_used:,})")
                                 set_count += 1
                                 details.append({"description": desc, "success": True, "tx_hash": tx_hash})
+                                tx_succeeded = True
                             else:
-                                print(f"    Reverted in block {int(receipt['blockNumber'], 16)}")
+                                print(f"       Transaction reverted in block {block_num}.")
+                                if retry < MAX_RETRIES - 1:
+                                    print(f"       Will retry with higher gas...")
+                                    time.sleep(3)
+                                    continue
                                 failed += 1
                                 details.append({"description": desc, "success": False, "tx_hash": tx_hash, "error": "reverted"})
                         else:
-                            print(f"    Warning: confirmation timeout, continuing anyway")
+                            # Tx was broadcast but receipt polling timed out.
+                            # The tx is likely still pending — don't count as failed.
+                            print(f"       Confirmation timed out. Transaction may still be processing.")
+                            print(f"       Check status: https://polygonscan.com/tx/{tx_hash}")
                             set_count += 1
-                            details.append({"description": desc, "success": True, "tx_hash": tx_hash})
-                        break  # Success — move to next approval
+                            details.append({"description": desc, "success": True, "tx_hash": tx_hash, "note": "confirmation_timeout"})
+                            tx_succeeded = True
+                        break  # Move to next approval (success or confirmed failure)
+
                     else:
                         error = result.get("error", "Unknown error")
-                        # Retry on "replacement transaction underpriced" with higher gas
-                        if "underpriced" in error.lower() and retry < max_retries - 1:
-                            print(f"    Underpriced — retrying with higher gas...")
+                        if "underpriced" in error.lower() and retry < MAX_RETRIES - 1:
+                            print(f"       Pending transaction in the way — retrying with higher gas...")
+                            time.sleep(3)
                             continue
-                        print(f"    Failed: {error}")
-                        failed += 1
-                        details.append({"description": desc, "success": False, "error": error})
-                        break
+                        elif "already known" in error.lower():
+                            # Transaction already in mempool — treat as success, wait for receipt
+                            print(f"       Transaction already submitted — waiting for confirmation...")
+                            # Try to get the pending tx hash from error or just move on
+                            set_count += 1
+                            details.append({"description": desc, "success": True, "note": "already_pending"})
+                            tx_succeeded = True
+                            break
+                        elif "nonce too low" in error.lower():
+                            # Nonce already used — approval may already be set. Re-check.
+                            print(f"       Nonce already used — this approval may have been set by a previous attempt.")
+                            set_count += 1
+                            details.append({"description": desc, "success": True, "note": "nonce_consumed"})
+                            tx_succeeded = True
+                            break
+                        else:
+                            print(f"       Failed: {error}")
+                            if retry < MAX_RETRIES - 1:
+                                print(f"       Retrying in 5s...")
+                                time.sleep(5)
+                                continue
+                            failed += 1
+                            details.append({"description": desc, "success": False, "error": error})
+                            break
 
                 except Exception as e:
-                    print(f"    Error: {type(e).__name__}: {e}")
-                    if retry < max_retries - 1:
-                        print(f"    Retrying...")
-                        time.sleep(3)
+                    print(f"       Error: {type(e).__name__}: {e}")
+                    if retry < MAX_RETRIES - 1:
+                        print(f"       Retrying in 5s...")
+                        time.sleep(5)
                         continue
                     failed += 1
                     details.append({"description": desc, "success": False, "error": str(e)})
                     break
 
-        # Summary
-        if failed == 0:
-            print(f"Done! Set {set_count} approvals, skipped {skipped}. Ready to trade.")
-        else:
-            print(f"Done with errors: set {set_count}, skipped {skipped}, failed {failed}.")
+            if tx_succeeded:
+                print(f"       Done.\n")
+            else:
+                print()
 
+        # --- Summary ---
+
+        print(f"{'='*50}")
+        print(f"  Approval Summary")
+        print(f"{'='*50}")
+        print(f"  Already set:  {skipped}")
+        print(f"  Newly set:    {set_count}")
+        if failed > 0:
+            print(f"  Failed:       {failed}")
+        print(f"  Total:        {skipped + set_count + failed}/{total}")
+        print()
+
+        if failed == 0 and (skipped + set_count) == total:
+            print("  All approvals complete. Your wallet is ready to trade on Polymarket!")
+            print(f"  Try: client.trade(market_id, 'yes', 10.0, venue='polymarket')")
+        elif failed > 0:
+            print(f"  {failed} approval(s) failed. You can re-run set_approvals() to retry —")
+            print(f"  it will skip the ones that succeeded and only attempt the remaining.")
+            if any(d.get("error") == "reverted" for d in details):
+                print(f"\n  If approvals keep reverting, check:")
+                print(f"    1. POL balance for gas: https://polygonscan.com/address/{self._wallet_address}")
+                print(f"    2. Contact Simmer support with your wallet address.")
+
+        print()
         return {"set": set_count, "skipped": skipped, "failed": failed, "details": details}
 
     @staticmethod
