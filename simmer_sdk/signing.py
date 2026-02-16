@@ -70,6 +70,7 @@ def build_and_sign_order(
     neg_risk: bool = False,
     signature_type: int = 0,  # 0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE
     tick_size: float = 0.01,
+    fee_rate_bps: int = 0,
 ) -> SignedOrder:
     """
     Build and sign a Polymarket order.
@@ -151,7 +152,7 @@ def build_and_sign_order(
         makerAmount=str(maker_raw),
         takerAmount=str(taker_raw),
         side=side_enum,
-        feeRateBps="0",
+        feeRateBps=str(fee_rate_bps),
         nonce="0",
         signer=wallet_address,
         expiration="0",

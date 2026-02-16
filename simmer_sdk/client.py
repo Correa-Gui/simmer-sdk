@@ -1356,6 +1356,7 @@ class SimmerClient:
 
         neg_risk = market_data.get("polymarket_neg_risk", False)
         tick_size = market_data.get("tick_size", 0.01)
+        fee_rate_bps = market_data.get("fee_rate_bps", 0)
 
         # Build and sign the order
         signed = build_and_sign_order(
@@ -1368,6 +1369,7 @@ class SimmerClient:
             neg_risk=neg_risk,
             signature_type=0,  # EOA
             tick_size=tick_size,
+            fee_rate_bps=fee_rate_bps,
         )
 
         return signed.to_dict()
