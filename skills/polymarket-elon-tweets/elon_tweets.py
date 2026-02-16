@@ -637,8 +637,12 @@ def run_strategy(dry_run=True, positions_only=False, show_config=False,
         for tid, stats in tracking_stats.items():
             title = stats["title"]
             # Convert title to slug: "Elon Musk # tweets February 13 - February 20, 2026?"
-            # → "elon-musk-tweets-february-13-february-20-2026"
-            slug = re.sub(r'[#?,]', '', title.lower())
+            # → "elon-musk-of-tweets-february-13-february-20"
+            # Polymarket uses "of-tweets" not "tweets", and omits the year
+            slug = title.lower()
+            slug = slug.replace('# tweets', 'of-tweets').replace('#tweets', 'of-tweets')
+            slug = re.sub(r',?\s*\d{4}\??$', '', slug)  # Strip trailing year + question mark
+            slug = re.sub(r'[?,]', '', slug)
             slug = re.sub(r'\s+', '-', slug.strip())
             slug = re.sub(r'-+', '-', slug).strip('-')
 
