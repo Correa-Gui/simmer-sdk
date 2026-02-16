@@ -1077,6 +1077,9 @@ class SimmerClient:
         After a market resolves, call this to convert CTF tokens into USDC.e
         in your wallet. The server looks up all Polymarket details automatically.
 
+        For managed wallets: server signs and submits, returns tx_hash.
+        For external wallets: signs locally and broadcasts via relay.
+
         Args:
             market_id: Market ID (from positions response)
             side: Which side you hold ('yes' or 'no')
@@ -1092,10 +1095,92 @@ class SimmerClient:
                     result = client.redeem(p['market_id'], p['redeemable_side'])
                     print(f"Redeemed: {result['tx_hash']}")
         """
-        return self._request("POST", "/api/sdk/redeem", json={
+        result = self._request("POST", "/api/sdk/redeem", json={
             "market_id": market_id,
             "side": side,
         })
+
+        # Managed wallet — server already signed and submitted
+        if not result.get("unsigned_tx"):
+            return result
+
+        # External wallet — sign locally and broadcast
+        if not self._private_key:
+            raise ValueError(
+                "Redemption requires signing. Set WALLET_PRIVATE_KEY env var or pass private_key to constructor."
+            )
+
+        try:
+            from eth_account import Account
+        except ImportError:
+            raise ImportError(
+                "eth-account is required for external wallet redemption. "
+                "Install with: pip install eth-account"
+            )
+
+        unsigned_tx = result["unsigned_tx"]
+        print(f"  Signing redemption transaction locally...")
+
+        # Fetch fresh nonce and gas price via Simmer's RPC proxy
+        def _rpc_call(method: str, params: list) -> Any:
+            resp = self._request("POST", "/api/rpc/polygon", json={
+                "jsonrpc": "2.0", "method": method, "params": params, "id": 1,
+            })
+            return resp.get("result")
+
+        nonce = int(_rpc_call("eth_getTransactionCount", [self._wallet_address, "pending"]) or "0x0", 16)
+        gas_price = int(_rpc_call("eth_gasPrice", []) or "0x0", 16)
+        priority_fee = max(30_000_000_000, gas_price // 4)
+        max_fee = gas_price * 2
+
+        tx_data = unsigned_tx.get("data", "")
+        tx_fields = {
+            "to": unsigned_tx["to"],
+            "data": bytes.fromhex(tx_data[2:] if tx_data.startswith("0x") else tx_data),
+            "value": 0,
+            "chainId": 137,
+            "nonce": nonce,
+            "gas": int(unsigned_tx.get("gas", 200000)),
+            "maxFeePerGas": max_fee,
+            "maxPriorityFeePerGas": priority_fee,
+            "type": 2,
+        }
+
+        signed = Account.sign_transaction(tx_fields, self._private_key)
+        signed_tx_hex = "0x" + signed.raw_transaction.hex()
+
+        # Broadcast via Simmer's Alchemy relay
+        broadcast = self._request("POST", "/api/sdk/wallet/broadcast-tx", json={
+            "signed_tx": signed_tx_hex,
+        })
+
+        tx_hash = broadcast.get("tx_hash")
+        if not broadcast.get("success") or not tx_hash:
+            return {"success": False, "error": broadcast.get("error", "Broadcast failed")}
+
+        print(f"  Broadcast OK ({tx_hash[:18]}...) — waiting for confirmation...")
+
+        # Poll for receipt
+        for attempt in range(30):
+            time.sleep(2)
+            try:
+                receipt_data = _rpc_call("eth_getTransactionReceipt", [tx_hash])
+                if receipt_data:
+                    status = int(receipt_data.get("status", "0x0"), 16)
+                    block = int(receipt_data.get("blockNumber", "0x0"), 16)
+                    if status == 1:
+                        print(f"  Confirmed in block {block}")
+                        return {"success": True, "tx_hash": tx_hash}
+                    else:
+                        return {"success": False, "tx_hash": tx_hash, "error": f"Transaction reverted in block {block}"}
+            except Exception:
+                pass
+            if attempt > 0 and attempt % 5 == 0:
+                print(f"  Still waiting for confirmation... ({attempt * 2}s)")
+
+        # Timed out but tx may still confirm
+        print(f"  Confirmation timed out. Check: https://polygonscan.com/tx/{tx_hash}")
+        return {"success": True, "tx_hash": tx_hash, "note": "confirmation_timeout"}
 
     # ==========================================
     # PRICE ALERTS
