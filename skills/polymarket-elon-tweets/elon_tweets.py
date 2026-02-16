@@ -102,6 +102,8 @@ CONFIG_SCHEMA = {
     "sizing_pct": {"env": "SIMMER_ELON_SIZING_PCT", "default": 0.05, "type": float},
     "max_trades_per_run": {"env": "SIMMER_ELON_MAX_TRADES", "default": 6, "type": int},
     "exit_threshold": {"env": "SIMMER_ELON_EXIT", "default": 0.65, "type": float},
+    "slippage_max_pct": {"env": "SIMMER_ELON_SLIPPAGE_MAX", "default": 0.25, "type": float},
+    "min_position_usd": {"env": "SIMMER_ELON_MIN_POSITION", "default": 2.00, "type": float},
     "data_source": {"env": "SIMMER_ELON_DATA_SOURCE", "default": "xtracker", "type": str},
 }
 
@@ -125,10 +127,11 @@ BUCKET_SPREAD = _config["bucket_spread"]
 SMART_SIZING_PCT = _config["sizing_pct"]
 MAX_TRADES_PER_RUN = _config["max_trades_per_run"]
 EXIT_THRESHOLD = _config["exit_threshold"]
+SLIPPAGE_MAX_PCT = _config["slippage_max_pct"]
+MIN_POSITION_USD = _config["min_position_usd"]
 DATA_SOURCE = _config["data_source"]
 
 # Context safeguard thresholds
-SLIPPAGE_MAX_PCT = 0.15
 TIME_TO_RESOLUTION_MIN_HOURS = 1  # Tweet markets are shorter, allow closer-to-resolution trades
 
 # =============================================================================
@@ -389,7 +392,7 @@ def calculate_position_size(api_key, default_size, smart_sizing):
     if balance <= 0:
         return default_size
     smart_size = min(balance * SMART_SIZING_PCT, MAX_POSITION_USD)
-    smart_size = max(smart_size, 1.0)
+    smart_size = max(smart_size, MIN_POSITION_USD)
     print(f"  💡 Smart sizing: ${smart_size:.2f} ({SMART_SIZING_PCT:.0%} of ${balance:.2f})")
     return smart_size
 
