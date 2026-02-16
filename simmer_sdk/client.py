@@ -1745,19 +1745,17 @@ class SimmerClient:
 
         print(f"Found {len(missing_txs)} missing approvals (of {total} total). Setting them now...")
 
-        # Use nonce + gas price from server (fetched via Alchemy RPC)
-        nonce = None
+        # Gas price from server (fetched via Alchemy RPC)
         max_fee_per_gas = None
         max_priority_fee = None
 
         tx_params = status.get("tx_params")
         if tx_params:
-            nonce = tx_params.get("nonce")
             gas_price = tx_params.get("gas_price")
             if gas_price:
                 # Priority fee scales with gas (25% of current, min 30 gwei)
                 max_priority_fee = max(30_000_000_000, gas_price // 4)
-                # Max fee at 2x current gas price (handles spikes during 9-tx batch)
+                # Max fee at 2x current gas price (handles spikes during batch)
                 max_fee_per_gas = gas_price * 2
                 print(f"  Gas price: {gas_price / 1e9:.0f} gwei, using max {max_fee_per_gas / 1e9:.0f} gwei")
 
@@ -1766,115 +1764,114 @@ class SimmerClient:
             max_fee_per_gas = 100_000_000_000  # 100 gwei fallback
             max_priority_fee = 30_000_000_000  # 30 gwei fallback
 
+        def _fetch_nonce() -> int:
+            """Fetch fresh nonce from chain via Alchemy proxy."""
+            resp = self._request("POST", "/api/rpc/polygon", json={
+                "jsonrpc": "2.0",
+                "method": "eth_getTransactionCount",
+                "params": [self._wallet_address, "pending"],
+                "id": 1,
+            })
+            return int(resp.get("result", "0x0"), 16)
+
+        def _wait_for_receipt(tx_hash: str) -> Optional[dict]:
+            """Poll for tx receipt via Alchemy proxy. Returns receipt or None."""
+            for _ in range(30):  # ~60s max wait
+                time.sleep(2)
+                try:
+                    receipt_data = self._request("POST", "/api/rpc/polygon", json={
+                        "jsonrpc": "2.0",
+                        "method": "eth_getTransactionReceipt",
+                        "params": [tx_hash],
+                        "id": 1,
+                    })
+                    receipt = receipt_data.get("result")
+                    if receipt:
+                        return receipt
+                except Exception:
+                    pass  # Retry polling
+            return None
+
         for i, tx_data in enumerate(missing_txs):
             desc = tx_data.get("description", f"Approval {i + 1}")
             print(f"  Setting approval {i + 1}/{len(missing_txs)}: {desc}...")
 
-            try:
-                # Build a full transaction for signing
-                tx_fields = {
-                    "to": tx_data["to"],
-                    "data": bytes.fromhex(tx_data["data"][2:] if tx_data["data"].startswith("0x") else tx_data["data"]),
-                    "value": 0,
-                    "chainId": 137,
-                    "gas": 60000,  # Approvals use ~46k gas, 60k is safe
-                    "maxFeePerGas": max_fee_per_gas,
-                    "maxPriorityFeePerGas": max_priority_fee,
-                    "type": 2,  # EIP-1559
-                }
-
-                if nonce is not None:
-                    tx_fields["nonce"] = nonce
-                else:
-                    # Fetch nonce per-tx as fallback
-                    try:
-                        nonce_resp = self._request("POST", "/api/rpc/polygon", json={
-                            "jsonrpc": "2.0",
-                            "method": "eth_getTransactionCount",
-                            "params": [self._wallet_address, "pending"],
-                            "id": 1,
-                        })
-                        tx_fields["nonce"] = int(nonce_resp.get("result", "0x0"), 16)
-                    except Exception:
-                        raise RuntimeError("Cannot determine nonce for transaction signing")
-
-                # Sign locally (keys never leave the client)
-                signed = Account.sign_transaction(tx_fields, self._private_key)
-                signed_tx_hex = "0x" + signed.raw_transaction.hex()
-
-                # Relay through Simmer backend (uses Alchemy RPC)
-                result = self._request("POST", "/api/sdk/wallet/broadcast-tx", json={
-                    "signed_tx": signed_tx_hex,
-                })
-
-                tx_hash = result.get("tx_hash")
-                # Increment nonce if tx was broadcast (has tx_hash), even if it reverted
-                if tx_hash and nonce is not None:
-                    nonce += 1
-
-                if result.get("success") and tx_hash:
-                    print(f"    Broadcast OK: {tx_hash[:18]}... waiting for confirmation")
-                    # Wait for on-chain confirmation before sending next tx.
-                    # Without this, Alchemy rejects subsequent txs with
-                    # "in-flight transaction limit reached for delegated accounts".
-                    confirmed = False
-                    reverted = False
-                    for attempt in range(30):  # ~60s max wait
-                        time.sleep(2)
-                        try:
-                            receipt_data = self._request("POST", "/api/rpc/polygon", json={
-                                "jsonrpc": "2.0",
-                                "method": "eth_getTransactionReceipt",
-                                "params": [tx_hash],
-                                "id": 1,
-                            })
-                            receipt = receipt_data.get("result")
-                            if receipt:
-                                status_code = int(receipt.get("status", "0x0"), 16)
-                                if status_code == 1:
-                                    print(f"    Confirmed in block {int(receipt['blockNumber'], 16)}")
-                                    confirmed = True
-                                else:
-                                    print(f"    Reverted in block {int(receipt['blockNumber'], 16)}")
-                                    reverted = True
-                                break
-                        except Exception:
-                            pass  # Retry polling
-                    if reverted:
-                        failed += 1
-                        details.append({"description": desc, "success": False, "tx_hash": tx_hash, "error": "reverted"})
-                    elif not confirmed:
-                        print(f"    Warning: confirmation timeout, continuing anyway")
-                        set_count += 1
-                        details.append({"description": desc, "success": True, "tx_hash": tx_hash})
-                    else:
-                        set_count += 1
-                        details.append({"description": desc, "success": True, "tx_hash": tx_hash})
-                else:
-                    error = result.get("error", "Unknown error")
-                    print(f"    Failed: {error}")
-                    failed += 1
-                    details.append({"description": desc, "success": False, "error": error})
-
-            except Exception as e:
-                print(f"    Error: {type(e).__name__}: {e}")
-                failed += 1
-                details.append({"description": desc, "success": False, "error": str(e)})
-                # Re-query nonce from chain — the timed-out tx may or may not
-                # have been broadcast. Fresh nonce prevents desync.
+            max_retries = 3
+            for retry in range(max_retries):
                 try:
-                    nonce_data = self._request("POST", "/api/rpc/polygon", json={
-                        "jsonrpc": "2.0",
-                        "method": "eth_getTransactionCount",
-                        "params": [self._wallet_address, "pending"],
-                        "id": 1,
+                    # Fresh nonce each attempt (avoids stale nonce from previous failed txs)
+                    nonce = _fetch_nonce()
+                    if retry > 0:
+                        print(f"    Retry {retry}/{max_retries - 1} (nonce={nonce})")
+
+                    # Bump gas on retries to replace stuck pending txs
+                    # EIP-1559 requires 10%+ bump on both fees to replace
+                    retry_multiplier = 1.5 ** retry
+                    effective_max_fee = int(max_fee_per_gas * retry_multiplier)
+                    effective_priority_fee = int(max_priority_fee * retry_multiplier)
+
+                    # Build a full transaction for signing
+                    tx_fields = {
+                        "to": tx_data["to"],
+                        "data": bytes.fromhex(tx_data["data"][2:] if tx_data["data"].startswith("0x") else tx_data["data"]),
+                        "value": 0,
+                        "chainId": 137,
+                        "nonce": nonce,
+                        "gas": 80000,  # Approvals use ~46k gas, 80k covers proxy contracts
+                        "maxFeePerGas": effective_max_fee,
+                        "maxPriorityFeePerGas": effective_priority_fee,
+                        "type": 2,  # EIP-1559
+                    }
+
+                    # Sign locally (keys never leave the client)
+                    signed = Account.sign_transaction(tx_fields, self._private_key)
+                    signed_tx_hex = "0x" + signed.raw_transaction.hex()
+
+                    # Relay through Simmer backend (uses Alchemy RPC)
+                    result = self._request("POST", "/api/sdk/wallet/broadcast-tx", json={
+                        "signed_tx": signed_tx_hex,
                     })
-                    fresh_nonce = int(nonce_data.get("result", "0x0"), 16)
-                    if nonce is not None and fresh_nonce != nonce:
-                        print(f"    Nonce corrected: {nonce} → {fresh_nonce}")
-                    nonce = fresh_nonce
-                except Exception:
-                    pass  # Best effort — next tx will fetch its own nonce if needed
+
+                    tx_hash = result.get("tx_hash")
+
+                    if result.get("success") and tx_hash:
+                        print(f"    Broadcast OK: {tx_hash[:18]}... waiting for confirmation")
+                        receipt = _wait_for_receipt(tx_hash)
+                        if receipt:
+                            status_code = int(receipt.get("status", "0x0"), 16)
+                            if status_code == 1:
+                                print(f"    Confirmed in block {int(receipt['blockNumber'], 16)}")
+                                set_count += 1
+                                details.append({"description": desc, "success": True, "tx_hash": tx_hash})
+                            else:
+                                print(f"    Reverted in block {int(receipt['blockNumber'], 16)}")
+                                failed += 1
+                                details.append({"description": desc, "success": False, "tx_hash": tx_hash, "error": "reverted"})
+                        else:
+                            print(f"    Warning: confirmation timeout, continuing anyway")
+                            set_count += 1
+                            details.append({"description": desc, "success": True, "tx_hash": tx_hash})
+                        break  # Success — move to next approval
+                    else:
+                        error = result.get("error", "Unknown error")
+                        # Retry on "replacement transaction underpriced" with higher gas
+                        if "underpriced" in error.lower() and retry < max_retries - 1:
+                            print(f"    Underpriced — retrying with higher gas...")
+                            continue
+                        print(f"    Failed: {error}")
+                        failed += 1
+                        details.append({"description": desc, "success": False, "error": error})
+                        break
+
+                except Exception as e:
+                    print(f"    Error: {type(e).__name__}: {e}")
+                    if retry < max_retries - 1:
+                        print(f"    Retrying...")
+                        time.sleep(3)
+                        continue
+                    failed += 1
+                    details.append({"description": desc, "success": False, "error": str(e)})
+                    break
 
         # Summary
         if failed == 0:
