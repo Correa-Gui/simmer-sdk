@@ -266,7 +266,10 @@ def get_portfolio():
 
 def get_market_context(market_id, my_probability=None):
     try:
-        return get_client().get_market_context(market_id)
+        endpoint = f"/api/sdk/context/{market_id}"
+        if my_probability is not None:
+            endpoint += f"?my_probability={my_probability}"
+        return get_client()._request("GET", endpoint)
     except Exception:
         return None
 
@@ -321,7 +324,6 @@ def execute_sell(market_id, shares):
 def search_markets(query):
     """Search Simmer for markets matching a query."""
     try:
-        from urllib.parse import quote
         data = get_client()._request("GET", "/api/sdk/markets", params={
             "q": query, "status": "active", "limit": 100
         })
