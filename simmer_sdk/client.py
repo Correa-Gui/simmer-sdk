@@ -1119,23 +1119,42 @@ class SimmerClient:
             )
 
         unsigned_tx = result["unsigned_tx"]
+
+        # Validate unsigned tx before signing
+        _REDEEM_CONTRACT_WHITELIST = {
+            "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045".lower(),  # CTF
+            "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296".lower(),  # NegRiskAdapter
+        }
+        tx_to = unsigned_tx.get("to", "")
+        if not tx_to or tx_to.lower() not in _REDEEM_CONTRACT_WHITELIST:
+            return {"success": False, "error": f"Unsigned tx targets unknown contract: {tx_to}"}
+        tx_from = unsigned_tx.get("from", "")
+        if tx_from and tx_from.lower() != self._wallet_address.lower():
+            return {"success": False, "error": f"Unsigned tx is for wrong wallet ({tx_from}), expected {self._wallet_address}"}
+
         print(f"  Signing redemption transaction locally...")
 
-        # Fetch fresh nonce and gas price via Simmer's RPC proxy
+        # Use Simmer's RPC proxy for chain queries
         def _rpc_call(method: str, params: list) -> Any:
             resp = self._request("POST", "/api/rpc/polygon", json={
                 "jsonrpc": "2.0", "method": method, "params": params, "id": 1,
             })
             return resp.get("result")
 
-        nonce = int(_rpc_call("eth_getTransactionCount", [self._wallet_address, "pending"]) or "0x0", 16)
+        # Use nonce from backend unsigned_tx (freshest), fall back to RPC
+        backend_nonce = unsigned_tx.get("nonce")
+        if backend_nonce is not None:
+            nonce = int(backend_nonce) if isinstance(backend_nonce, (int, float)) else int(str(backend_nonce), 0)
+        else:
+            nonce = int(_rpc_call("eth_getTransactionCount", [self._wallet_address, "pending"]) or "0x0", 16)
+
         gas_price = int(_rpc_call("eth_gasPrice", []) or "0x0", 16)
         priority_fee = max(30_000_000_000, gas_price // 4)
         max_fee = gas_price * 2
 
         tx_data = unsigned_tx.get("data", "")
         tx_fields = {
-            "to": unsigned_tx["to"],
+            "to": tx_to,
             "data": bytes.fromhex(tx_data[2:] if tx_data.startswith("0x") else tx_data),
             "value": 0,
             "chainId": 137,
