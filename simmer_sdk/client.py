@@ -1766,9 +1766,6 @@ class SimmerClient:
             max_fee_per_gas = 100_000_000_000  # 100 gwei fallback
             max_priority_fee = 30_000_000_000  # 30 gwei fallback
 
-        # Public RPC fallback for receipt polling and nonce re-queries
-        polygon_rpc = os.environ.get("POLYGON_RPC_URL", "https://polygon-rpc.com")
-
         for i, tx_data in enumerate(missing_txs):
             desc = tx_data.get("description", f"Approval {i + 1}")
             print(f"  Setting approval {i + 1}/{len(missing_txs)}: {desc}...")
@@ -1791,13 +1788,13 @@ class SimmerClient:
                 else:
                     # Fetch nonce per-tx as fallback
                     try:
-                        nonce_resp = requests.post(polygon_rpc, json={
+                        nonce_resp = self._request("POST", "/api/rpc/polygon", json={
                             "jsonrpc": "2.0",
                             "method": "eth_getTransactionCount",
                             "params": [self._wallet_address, "pending"],
                             "id": 1,
-                        }, timeout=10)
-                        tx_fields["nonce"] = int(nonce_resp.json().get("result", "0x0"), 16)
+                        })
+                        tx_fields["nonce"] = int(nonce_resp.get("result", "0x0"), 16)
                     except Exception:
                         raise RuntimeError("Cannot determine nonce for transaction signing")
 
@@ -1825,13 +1822,13 @@ class SimmerClient:
                     for attempt in range(30):  # ~60s max wait
                         time.sleep(2)
                         try:
-                            receipt_resp = requests.post(polygon_rpc, json={
+                            receipt_data = self._request("POST", "/api/rpc/polygon", json={
                                 "jsonrpc": "2.0",
                                 "method": "eth_getTransactionReceipt",
                                 "params": [tx_hash],
                                 "id": 1,
-                            }, timeout=10)
-                            receipt = receipt_resp.json().get("result")
+                            })
+                            receipt = receipt_data.get("result")
                             if receipt:
                                 status_code = int(receipt.get("status", "0x0"), 16)
                                 if status_code == 1:
@@ -1866,13 +1863,13 @@ class SimmerClient:
                 # Re-query nonce from chain — the timed-out tx may or may not
                 # have been broadcast. Fresh nonce prevents desync.
                 try:
-                    nonce_resp = requests.post(polygon_rpc, json={
+                    nonce_data = self._request("POST", "/api/rpc/polygon", json={
                         "jsonrpc": "2.0",
                         "method": "eth_getTransactionCount",
                         "params": [self._wallet_address, "pending"],
                         "id": 1,
-                    }, timeout=10)
-                    fresh_nonce = int(nonce_resp.json().get("result", "0x0"), 16)
+                    })
+                    fresh_nonce = int(nonce_data.get("result", "0x0"), 16)
                     if nonce is not None and fresh_nonce != nonce:
                         print(f"    Nonce corrected: {nonce} → {fresh_nonce}")
                     nonce = fresh_nonce
