@@ -2,11 +2,11 @@
 name: polymarket-mert-sniper
 displayName: Mert Sniper
 description: Near-expiry conviction trading on Polymarket. Snipe markets about to resolve when the odds are heavily skewed. Filter by topic, cap your bets, and only trade strong splits close to deadline.
-metadata: {"clawdbot":{"emoji":"🎯","requires":{"env":["SIMMER_API_KEY"]},"cron":null,"autostart":false}}
+metadata: {"clawdbot":{"emoji":"🎯","requires":{"env":["SIMMER_API_KEY","WALLET_PRIVATE_KEY"],"pip":["simmer-sdk"]},"cron":null,"autostart":false}}
 authors:
   - Simmer (@simmer_markets)
 attribution: "Strategy inspired by @mert — https://x.com/mert/status/2020216613279060433"
-version: "1.0.3"
+version: "1.0.5"
 published: true
 ---
 
@@ -15,6 +15,8 @@ published: true
 Near-expiry conviction trading on Polymarket. Snipe markets about to resolve when the odds are heavily skewed.
 
 > Strategy by [@mert](https://x.com/mert/status/2020216613279060433) — filter by topic, cap your bets, wait until near expiry, and only trade strong splits.
+
+> **This is a template.** The default logic (expiry + split filter) gets you started — remix it with your own filters, timing rules, or market selection criteria. The skill handles all the plumbing (market discovery, trade execution, safeguards). Your agent provides the alpha.
 
 ## When to Use This Skill
 
@@ -33,13 +35,18 @@ Use this skill when the user wants to:
    - Get it from simmer.markets/dashboard -> SDK tab
    - Store in environment as `SIMMER_API_KEY`
 
-2. **Ask about settings** (or confirm defaults)
+2. **Ask for wallet private key** (required for live trading)
+   - This is the private key for their Polymarket wallet (the wallet that holds USDC)
+   - Store in environment as `WALLET_PRIVATE_KEY`
+   - The SDK uses this to sign orders client-side automatically — no manual signing needed
+
+3. **Ask about settings** (or confirm defaults)
    - Market filter: Which markets to scan (default: all)
    - Max bet: Maximum per trade (default $10)
    - Expiry window: How close to resolution (default 2 minutes)
    - Min split: Minimum odds skew (default 60/40)
 
-3. **Save settings to config.json or environment variables**
+4. **Save settings to config.json or environment variables**
 
 ## Configuration
 
@@ -162,6 +169,12 @@ Each cycle the script:
 - Polymarket's `endDate` is the event-level end-of-day, not the individual market close time
 - For 15-min crypto markets (e.g. "BTC Up or Down - Feb 8, 11PM ET"), the actual close time is in the question text but not in the API
 - This is a Polymarket data limitation — widen the expiry window (`--expiry 1080`) as a workaround, or use the split filter to find conviction opportunities regardless of timing
+
+**"External wallet requires a pre-signed order"**
+- `WALLET_PRIVATE_KEY` is not set in the environment
+- The SDK signs orders automatically when this env var is present — no manual signing code needed
+- Fix: `export WALLET_PRIVATE_KEY=0x<your-polymarket-wallet-private-key>`
+- Do NOT attempt to sign orders manually or modify the skill code — the SDK handles it
 
 **"API key invalid"**
 - Get new key from simmer.markets/dashboard -> SDK tab

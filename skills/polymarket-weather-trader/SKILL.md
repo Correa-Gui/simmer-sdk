@@ -2,17 +2,19 @@
 name: polymarket-weather-trader
 displayName: Polymarket Weather Trader
 description: Trade Polymarket weather markets using NOAA forecasts via Simmer API. Inspired by gopfan2's $2M+ strategy. Use when user wants to trade temperature markets, automate weather bets, check NOAA forecasts, or run gopfan2-style trading.
-metadata: {"clawdbot":{"emoji":"🌡️","requires":{"env":["SIMMER_API_KEY"]},"cron":null,"autostart":false}}
+metadata: {"clawdbot":{"emoji":"🌡️","requires":{"env":["SIMMER_API_KEY","WALLET_PRIVATE_KEY"],"pip":["simmer-sdk"]},"cron":null,"autostart":false}}
 authors:
   - Simmer (@simmer_markets)
 attribution: "Strategy inspired by gopfan2"
-version: "1.7.2"
+version: "1.7.4"
 published: true
 ---
 
 # Polymarket Weather Trader
 
 Trade temperature markets on Polymarket using NOAA forecast data.
+
+> **This is a template.** The default signal is NOAA temperature forecasts — remix it with other weather APIs, different forecast models, or additional market types (precipitation, wind, etc.). The skill handles all the plumbing (market discovery, NOAA parsing, trade execution, safeguards). Your agent provides the alpha.
 
 ## When to Use This Skill
 
@@ -45,15 +47,20 @@ When user asks to install or configure this skill:
    - They can get it from simmer.markets/dashboard → SDK tab
    - Store in environment as `SIMMER_API_KEY`
 
-2. **Ask about settings** (or confirm defaults)
+2. **Ask for wallet private key** (required for live trading)
+   - This is the private key for their Polymarket wallet (the wallet that holds USDC)
+   - Store in environment as `WALLET_PRIVATE_KEY`
+   - The SDK uses this to sign orders client-side automatically — no manual signing needed
+
+3. **Ask about settings** (or confirm defaults)
    - Entry threshold: When to buy (default 15¢)
    - Exit threshold: When to sell (default 45¢)
    - Max position: Amount per trade (default $2.00)
    - Locations: Which cities to trade (default NYC)
 
-3. **Save settings to environment variables**
+4. **Save settings to environment variables**
 
-4. **Set up cron** (disabled by default — user must enable scheduling)
+5. **Set up cron** (disabled by default — user must enable scheduling)
 
 ## Configuration
 
@@ -203,6 +210,12 @@ All trades are tagged with `source: "sdk:weather"`. This means:
 
 **"No weather markets found"**
 - Weather markets may not be active (seasonal)
+
+**"External wallet requires a pre-signed order"**
+- `WALLET_PRIVATE_KEY` is not set in the environment
+- The SDK signs orders automatically when this env var is present — no manual signing code needed
+- Fix: `export WALLET_PRIVATE_KEY=0x<your-polymarket-wallet-private-key>`
+- Do NOT attempt to sign orders manually or modify the skill code — the SDK handles it
 
 **"API key invalid"**
 - Get new key from simmer.markets/dashboard → SDK tab
