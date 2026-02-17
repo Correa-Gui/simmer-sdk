@@ -66,7 +66,6 @@ python tradejournal.py --export trades.csv
 | Setting | Environment Variable | Default |
 |---------|---------------------|---------|
 | API Key | `SIMMER_API_KEY` | (required) |
-| API URL | `SIMMER_API_URL` | `https://api.simmer.markets` |
 
 ## Storage
 
