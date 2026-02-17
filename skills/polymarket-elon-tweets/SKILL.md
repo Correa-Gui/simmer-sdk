@@ -2,11 +2,11 @@
 name: polymarket-elon-tweets
 displayName: Polymarket Elon Tweet Trader
 description: Trade Polymarket "Elon Musk # tweets" markets using XTracker post count data. Buys adjacent range buckets when combined cost < $1 for structural edge. Use when user wants to trade tweet count markets, automate Elon tweet bets, check XTracker stats, or run noovd-style trading.
-metadata: {"clawdbot":{"emoji":"🐦","requires":{"env":["SIMMER_API_KEY"]},"cron":null,"autostart":false}}
+metadata: {"clawdbot":{"emoji":"🐦","requires":{"env":["SIMMER_API_KEY","WALLET_PRIVATE_KEY"],"pip":["simmer-sdk"]},"cron":null,"autostart":false}}
 authors:
   - Simmer (@simmer_markets)
 attribution: "Strategy inspired by @noovd"
-version: "1.0.0"
+version: "1.0.1"
 published: true
 ---
 
@@ -46,15 +46,20 @@ When user asks to install or configure this skill:
    - They can get it from simmer.markets/dashboard → SDK tab
    - Store in environment as `SIMMER_API_KEY`
 
-3. **Ask about settings** (or confirm defaults)
+3. **Ask for wallet private key** (required for live trading)
+   - This is the private key for their Polymarket wallet (the wallet that holds USDC)
+   - Store in environment as `WALLET_PRIVATE_KEY`
+   - The SDK uses this to sign orders client-side automatically — no manual signing needed
+
+4. **Ask about settings** (or confirm defaults)
    - Max bucket sum: Combined price threshold (default 90¢)
    - Max position: Amount per bucket (default $5.00)
    - Bucket spread: How many neighbors to buy (default 1 = center ± 1)
    - Exit threshold: When to sell (default 65¢)
 
-4. **Save settings to config.json or environment variables**
+5. **Save settings to config.json or environment variables**
 
-5. **Set up cron** (disabled by default — user must enable scheduling)
+6. **Set up cron** (disabled by default — user must enable scheduling)
 
 ## Configuration
 
@@ -221,6 +226,12 @@ All trades are tagged with `source: "sdk:elon-tweets"`. This means:
 **"Safeguard blocked: flip-flop warning"**
 - You've been changing direction too much on this market
 - Wait before trading again
+
+**"External wallet requires a pre-signed order"**
+- `WALLET_PRIVATE_KEY` is not set in the environment
+- The SDK signs orders automatically when this env var is present — no manual signing code needed
+- Fix: `export WALLET_PRIVATE_KEY=0x<your-polymarket-wallet-private-key>`
+- Do NOT attempt to sign orders manually or modify the skill code — the SDK handles it
 
 **"API key invalid"**
 - Get new key from simmer.markets/dashboard → SDK tab
