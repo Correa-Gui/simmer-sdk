@@ -2,7 +2,7 @@
 name: polymarket-elon-tweets
 displayName: Polymarket Elon Tweet Trader
 description: 'Trade Polymarket "Elon Musk # tweets" markets using XTracker post count data. Buys adjacent range buckets when combined cost < $1 for structural edge. Use when user wants to trade tweet count markets, automate Elon tweet bets, check XTracker stats, or run noovd-style trading.'
-metadata: {"clawdbot":{"emoji":"🐦","requires":{"env":["SIMMER_API_KEY","WALLET_PRIVATE_KEY"],"pip":["simmer-sdk"]},"cron":null,"autostart":false}}
+metadata: {"clawdbot":{"emoji":"🐦","requires":{"env":["SIMMER_API_KEY"],"pip":["simmer-sdk"]},"cron":null,"autostart":false}}
 authors:
   - Simmer (@simmer_markets)
 attribution: "Strategy inspired by @noovd"

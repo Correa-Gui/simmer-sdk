@@ -2,10 +2,10 @@
 name: polymarket-signal-sniper
 displayName: Polymarket Signal Sniper
 description: Snipe Polymarket opportunities from your own signal sources. Monitors RSS feeds with Trading Agent-grade safeguards.
-metadata: {"clawdbot":{"emoji":"🎯","requires":{"env":["SIMMER_API_KEY","WALLET_PRIVATE_KEY"],"pip":["simmer-sdk"]},"cron":null,"autostart":false}}
+metadata: {"clawdbot":{"emoji":"🎯","requires":{"env":["SIMMER_API_KEY"],"pip":["simmer-sdk"]},"cron":null,"autostart":false}}
 authors:
   - Simmer (@simmer_markets)
-version: "1.3.6"
+version: "1.3.7"
 published: true
 ---
 
