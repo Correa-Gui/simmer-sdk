@@ -6,7 +6,7 @@ metadata: {"clawdbot":{"emoji":"🐦","requires":{"env":["SIMMER_API_KEY"],"pip"
 authors:
   - Simmer (@simmer_markets)
 attribution: "Strategy inspired by @noovd"
-version: "1.0.3"
+version: "1.0.4"
 published: true
 ---
 
@@ -71,11 +71,11 @@ When user asks to install or configure this skill:
 | Smart sizing % | `SIMMER_ELON_SIZING_PCT` | `sizing_pct` | 0.05 | % of balance per trade |
 | Max trades/run | `SIMMER_ELON_MAX_TRADES` | `max_trades_per_run` | 6 | Maximum trades per scan cycle |
 | Exit threshold | `SIMMER_ELON_EXIT` | `exit_threshold` | 0.65 | Sell when bucket price above this |
-| Slippage max | `SIMMER_ELON_SLIPPAGE_MAX` | `slippage_max_pct` | 0.25 | Skip trade if slippage exceeds this |
+| Slippage max | `SIMMER_ELON_SLIPPAGE_MAX` | `slippage_max_pct` | 0.05 | Skip trade if slippage exceeds this |
 | Min position | `SIMMER_ELON_MIN_POSITION` | `min_position_usd` | 2.00 | Floor for smart sizing (USD) |
 | Data source | `SIMMER_ELON_DATA_SOURCE` | `data_source` | xtracker | Data source (xtracker) |
 
-Config priority: environment variables > config.json > defaults.
+Config priority: config.json > environment variables > defaults.
 
 ## Quick Commands
 

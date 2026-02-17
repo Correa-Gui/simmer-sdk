@@ -23,7 +23,6 @@ import sys
 import re
 import json
 import argparse
-from datetime import datetime, timezone, timedelta
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
 
@@ -103,12 +102,29 @@ CONFIG_SCHEMA = {
     "sizing_pct": {"env": "SIMMER_ELON_SIZING_PCT", "default": 0.05, "type": float},
     "max_trades_per_run": {"env": "SIMMER_ELON_MAX_TRADES", "default": 6, "type": int},
     "exit_threshold": {"env": "SIMMER_ELON_EXIT", "default": 0.65, "type": float},
-    "slippage_max_pct": {"env": "SIMMER_ELON_SLIPPAGE_MAX", "default": 0.25, "type": float},
+    "slippage_max_pct": {"env": "SIMMER_ELON_SLIPPAGE_MAX", "default": 0.05, "type": float},
     "min_position_usd": {"env": "SIMMER_ELON_MIN_POSITION", "default": 2.00, "type": float},
     "data_source": {"env": "SIMMER_ELON_DATA_SOURCE", "default": "xtracker", "type": str},
 }
 
 _config = load_config(CONFIG_SCHEMA, __file__)
+
+
+def _reload_config_globals():
+    """Reload module-level config globals from disk (used after --set)."""
+    global _config, MAX_BUCKET_SUM, MAX_POSITION_USD, BUCKET_SPREAD, SMART_SIZING_PCT
+    global MAX_TRADES_PER_RUN, EXIT_THRESHOLD, SLIPPAGE_MAX_PCT, MIN_POSITION_USD, DATA_SOURCE
+    _config = load_config(CONFIG_SCHEMA, __file__)
+    MAX_BUCKET_SUM = _config["max_bucket_sum"]
+    MAX_POSITION_USD = _config["max_position_usd"]
+    BUCKET_SPREAD = _config["bucket_spread"]
+    SMART_SIZING_PCT = _config["sizing_pct"]
+    MAX_TRADES_PER_RUN = _config["max_trades_per_run"]
+    EXIT_THRESHOLD = _config["exit_threshold"]
+    SLIPPAGE_MAX_PCT = _config["slippage_max_pct"]
+    MIN_POSITION_USD = _config["min_position_usd"]
+    DATA_SOURCE = _config["data_source"]
+
 
 XTRACKER_API_BASE = "https://xtracker.polymarket.com/api"
 
@@ -118,7 +134,6 @@ TRADE_SOURCE = "sdk:elon-tweets"
 # Polymarket constraints
 MIN_SHARES_PER_ORDER = 5.0
 MIN_TICK_SIZE = 0.01
-XTRACKER_ELON_USER_ID = "c4e2a911-36ec-4453-8a39-1edb5e6b2969"
 
 # Strategy parameters
 MAX_BUCKET_SUM = _config["max_bucket_sum"]
@@ -199,19 +214,6 @@ def get_xtracker_stats(tracking_id):
     if not data or not data.get("success"):
         return None
     return data.get("data", {})
-
-
-def get_xtracker_daily_metrics(start_date, end_date):
-    """Get daily post counts from XTracker metrics endpoint."""
-    user_id = XTRACKER_ELON_USER_ID
-    url = (
-        f"{XTRACKER_API_BASE}/metrics/{user_id}"
-        f"?type=daily&startDate={start_date}&endDate={end_date}"
-    )
-    data = fetch_json(url)
-    if not data or not data.get("success"):
-        return []
-    return data.get("data", [])
 
 
 # =============================================================================
@@ -409,11 +411,13 @@ def calculate_position_size(default_size, smart_sizing):
 # Core strategy
 # =============================================================================
 
-def find_target_buckets(markets, projected_count, spread=BUCKET_SPREAD):
+def find_target_buckets(markets, projected_count, spread=None):
     """
     Find the bucket containing the projected count and its neighbors.
     Returns list of (market, range_low, range_high, distance_from_projection).
     """
+    if spread is None:
+        spread = BUCKET_SPREAD
     buckets = []
     for m in markets:
         # Try outcome_name first, then question
@@ -679,6 +683,17 @@ def run_strategy(dry_run=True, positions_only=False, show_config=False,
                         "name": result.get("event_name", title),
                         "markets": result["markets"],
                     }
+                elif event_id:
+                    # Response didn't include markets — fall back to search
+                    mkt_list = search_markets(title[:50])
+                    if mkt_list:
+                        events[event_id] = {
+                            "name": result.get("event_name", title),
+                            "markets": mkt_list,
+                        }
+                        log(f"  Found {len(mkt_list)} existing markets via search")
+                    else:
+                        log(f"  ⚠️  Could not retrieve existing markets")
             else:
                 error = result.get("error") if isinstance(result, dict) else str(result)
                 log(f"  ⚠️  Import failed: {error}")
@@ -714,10 +729,16 @@ def run_strategy(dry_run=True, positions_only=False, show_config=False,
         projected_count = matched_stats["pace"]
         current_count = matched_stats["total"]
         pct_complete = matched_stats["percent_complete"]
+        days_remaining = matched_stats["days_remaining"]
 
         log(f"\n🎯 {event_name[:60]}")
         log(f"   Current: {current_count} posts | Projected: {projected_count} | {pct_complete}% done")
         log(f"   Markets: {len(event_markets)}")
+
+        # Skip future events where pace projection is unreliable
+        if current_count == 0 and days_remaining > 2:
+            log(f"   ⏸️  Event hasn't started yet ({current_count} posts, {days_remaining} days remaining) - projection unreliable, skipping")
+            continue
 
         # Find target buckets around projection
         targets = find_target_buckets(event_markets, projected_count)
@@ -856,7 +877,8 @@ if __name__ == "__main__":
                         pass
                 updates[key] = value
         if updates:
-            updated = update_config(updates, __file__)
+            update_config(updates, __file__)
+            _reload_config_globals()
             print(f"✅ Config updated: {updates}")
             print(f"   Saved to: {get_config_path(__file__)}")
 
