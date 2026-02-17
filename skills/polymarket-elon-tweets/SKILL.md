@@ -6,7 +6,7 @@ metadata: {"clawdbot":{"emoji":"🐦","requires":{"env":["SIMMER_API_KEY","WALLE
 authors:
   - Simmer (@simmer_markets)
 attribution: "Strategy inspired by @noovd"
-version: "1.0.2"
+version: "1.0.3"
 published: true
 ---
 

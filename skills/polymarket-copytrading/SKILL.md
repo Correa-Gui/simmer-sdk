@@ -5,7 +5,7 @@ description: Mirror positions from top Polymarket traders using Simmer API. Size
 metadata: {"clawdbot":{"emoji":"🐋","requires":{"env":["SIMMER_API_KEY","WALLET_PRIVATE_KEY"],"pip":["simmer-sdk"]},"cron":null,"autostart":false}}
 authors:
   - Simmer (@simmer_markets)
-version: "1.3.7"
+version: "1.3.8"
 published: true
 ---
 

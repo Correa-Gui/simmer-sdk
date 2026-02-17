@@ -5,7 +5,7 @@ description: Trade Polymarket BTC 5-minute and 15-minute fast markets using CEX 
 metadata: {"clawdbot":{"emoji":"⚡","requires":{"env":["SIMMER_API_KEY","WALLET_PRIVATE_KEY"],"pip":["simmer-sdk"]},"cron":null,"autostart":false}}
 authors:
   - Simmer (@simmer_markets)
-version: "1.0.9"
+version: "1.0.10"
 published: true
 ---
 
