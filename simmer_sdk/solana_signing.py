@@ -4,7 +4,7 @@ Solana Transaction Signing Utilities
 Signs Solana transactions locally for Kalshi BYOW trading.
 Uses a Node.js helper script because OpenClaw Docker doesn't support pip/solana-py.
 
-SECURITY NOTE: The private key is read from SIMMER_SOLANA_KEY environment variable
+SECURITY NOTE: The private key is read from SOLANA_PRIVATE_KEY environment variable
 and is NEVER logged or transmitted. All signing happens locally.
 """
 
@@ -17,7 +17,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Environment variable for Solana private key
-SOLANA_PRIVATE_KEY_ENV_VAR = "SIMMER_SOLANA_KEY"
+SOLANA_PRIVATE_KEY_ENV_VAR = "SOLANA_PRIVATE_KEY"
 
 # Path to the Node.js signing script (inside this package)
 SCRIPTS_DIR = Path(__file__).parent / "scripts"
@@ -46,7 +46,7 @@ def get_solana_public_key() -> Optional[str]:
     script = """
 const { Keypair } = require('@solana/web3.js');
 const bs58 = require('bs58');
-const secretKey = bs58.decode(process.env.SIMMER_SOLANA_KEY);
+const secretKey = bs58.decode(process.env.SOLANA_PRIVATE_KEY);
 const wallet = Keypair.fromSecretKey(secretKey);
 console.log(wallet.publicKey.toBase58());
 """
@@ -84,7 +84,7 @@ def sign_solana_transaction(unsigned_tx_base64: str) -> str:
         Base64-encoded signed transaction
 
     Raises:
-        ValueError: If SIMMER_SOLANA_KEY env var is not set
+        ValueError: If SOLANA_PRIVATE_KEY env var is not set
         RuntimeError: If signing fails (Node.js not found, invalid key, etc.)
 
     Example:
@@ -146,7 +146,7 @@ def validate_solana_key() -> bool:
 
     Example:
         if not validate_solana_key():
-            print("Please set a valid SIMMER_SOLANA_KEY")
+            print("Please set a valid SOLANA_PRIVATE_KEY")
     """
     if not has_solana_key():
         return False

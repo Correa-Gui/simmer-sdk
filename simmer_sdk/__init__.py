@@ -31,7 +31,7 @@ External Wallet Trading (BYOW):
         )
 
     KALSHI (Solana wallet):
-        # Set SIMMER_SOLANA_KEY env var to your base58 Solana secret key
+        # Set SOLANA_PRIVATE_KEY env var to your base58 Solana secret key
         client = SimmerClient(api_key="sk_live_...", venue="kalshi")
         result = client.trade(...)  # Signs locally with Solana key
 
@@ -39,7 +39,7 @@ External Wallet Trading (BYOW):
         # Run `npm install` in the SDK directory to install dependencies.
 
     The SDK will:
-    - Auto-detect env vars (WALLET_PRIVATE_KEY for EVM, SIMMER_SOLANA_KEY for Solana)
+    - Auto-detect env vars (WALLET_PRIVATE_KEY for EVM, SOLANA_PRIVATE_KEY for Solana)
     - Auto-link EVM wallet on first Polymarket trade
     - Warn about missing Polymarket approvals
 

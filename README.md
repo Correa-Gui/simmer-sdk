@@ -46,7 +46,7 @@ client = SimmerClient(api_key="sk_live_...", venue="simmer")
 # Real trading on Polymarket - requires EVM wallet (WALLET_PRIVATE_KEY)
 client = SimmerClient(api_key="sk_live_...", venue="polymarket")
 
-# Real trading on Kalshi - requires Solana wallet (SIMMER_SOLANA_KEY)
+# Real trading on Kalshi - requires Solana wallet (SOLANA_PRIVATE_KEY)
 client = SimmerClient(api_key="sk_live_...", venue="kalshi")
 
 # Override venue for a single trade
@@ -348,11 +348,11 @@ This installs `@solana/web3.js` and `bs58` for local signing.
 
 #### 2. Configure Your Solana Wallet
 
-Set `SIMMER_SOLANA_KEY` to your base58-encoded Solana secret key:
+Set `SOLANA_PRIVATE_KEY` to your base58-encoded Solana secret key:
 
 ```bash
 # In your .env or config.yaml
-SIMMER_SOLANA_KEY=your_base58_secret_key_here
+SOLANA_PRIVATE_KEY=your_base58_secret_key_here
 ```
 
 > **Getting your Solana secret key:**
@@ -370,7 +370,7 @@ Your Solana wallet needs:
 
 ```python
 import os
-os.environ["SIMMER_SOLANA_KEY"] = "your_base58_secret_key"
+os.environ["SOLANA_PRIVATE_KEY"] = "your_base58_secret_key"
 
 from simmer_sdk import SimmerClient
 
@@ -387,7 +387,7 @@ print(f"Trade executed: {result.trade_id}")
 ### How It Works
 
 1. SDK requests unsigned transaction from Simmer (via DFlow)
-2. SDK signs transaction locally using your `SIMMER_SOLANA_KEY`
+2. SDK signs transaction locally using your `SOLANA_PRIVATE_KEY`
 3. SDK submits signed transaction through Simmer
 4. Transaction executes on Solana
 
@@ -404,7 +404,7 @@ print(f"Trade executed: {result.trade_id}")
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| `SIMMER_SOLANA_KEY env var required` | Key not set | Set env var with base58 secret key |
+| `SOLANA_PRIVATE_KEY env var required` | Key not set | Set env var with base58 secret key |
 | `Node.js is required for Solana signing` | Node.js not installed | Install Node.js 16+ |
 | `Solana signing script not found` | Missing npm install | Run `npm install` in SDK directory |
 | `Invalid key length` | Wrong key format | Use base58 secret key (64 bytes) |
@@ -564,10 +564,10 @@ Always use Simmer for trades (`client.trade()`), context (`client.get_market_con
 - `venue`: Trading venue (default: `simmer`)
   - `simmer`: Simmer LMSR with $SIM virtual currency
   - `polymarket`: Real Polymarket CLOB with USDC (requires `WALLET_PRIVATE_KEY` or `private_key`)
-  - `kalshi`: Real Kalshi via DFlow with USDC on Solana (requires `SIMMER_SOLANA_KEY` env var)
+  - `kalshi`: Real Kalshi via DFlow with USDC on Solana (requires `SOLANA_PRIVATE_KEY` env var)
 - `private_key`: Optional EVM wallet private key for Polymarket trading. When provided, orders are signed locally instead of server-side.
 
-> **Note:** For Kalshi, use `SIMMER_SOLANA_KEY` environment variable (not `private_key` parameter).
+> **Note:** For Kalshi, use `SOLANA_PRIVATE_KEY` environment variable (not `private_key` parameter).
 
 #### `get_markets(status, import_source, limit)`
 List available markets.
@@ -683,12 +683,12 @@ Check if client is configured for external EVM wallet trading (Polymarket).
 - Returns: `True` if `private_key` was provided
 
 #### `solana_wallet_address` (property)
-Get the Solana wallet address derived from `SIMMER_SOLANA_KEY`.
+Get the Solana wallet address derived from `SOLANA_PRIVATE_KEY`.
 - Returns: Address string (base58) or `None` if no Solana key set
 
 #### `has_solana_wallet` (property)
 Check if client is configured for Solana wallet trading (Kalshi).
-- Returns: `True` if `SIMMER_SOLANA_KEY` env var is set
+- Returns: `True` if `SOLANA_PRIVATE_KEY` env var is set
 
 ### Risk Management Methods
 
@@ -881,7 +881,7 @@ else:
 | `Challenge expired` | Took too long to link | Request new challenge |
 | `Maker address mismatch` | Signed order wrong wallet | Sign with linked wallet |
 | `Approvals not set` | Token approvals missing | Run `ensure_approvals()` |
-| `SIMMER_SOLANA_KEY env var required` | Kalshi needs Solana key | Set env var with base58 secret key |
+| `SOLANA_PRIVATE_KEY env var required` | Kalshi needs Solana key | Set env var with base58 secret key |
 | `Node.js is required for Solana signing` | Node.js not found | Install Node.js 16+ |
 | `Solana signing script not found` | Missing npm dependencies | Run `npm install` in SDK directory |
 | `Invalid key length` (Solana) | Wrong key format | Use base58 secret key (64 bytes) |

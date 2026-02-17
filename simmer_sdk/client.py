@@ -123,7 +123,7 @@ class SimmerClient:
     PRIVATE_KEY_ENV_VAR = "WALLET_PRIVATE_KEY"
     PRIVATE_KEY_ENV_VAR_LEGACY = "SIMMER_PRIVATE_KEY"
     # Environment variable for Solana private key (Kalshi via DFlow)
-    SOLANA_PRIVATE_KEY_ENV_VAR = "SIMMER_SOLANA_KEY"
+    SOLANA_PRIVATE_KEY_ENV_VAR = "SOLANA_PRIVATE_KEY"
 
     def __init__(
         self,
@@ -143,7 +143,7 @@ class SimmerClient:
                 - "polymarket": Execute real trades on Polymarket CLOB with USDC
                   (requires wallet linked in dashboard + real trading enabled)
                 - "kalshi": Execute real trades on Kalshi via DFlow
-                  (requires SIMMER_SOLANA_KEY env var with base58 secret key)
+                  (requires SOLANA_PRIVATE_KEY env var with base58 secret key)
                 Note: "sandbox" is a deprecated alias for "simmer" (will be removed in 30 days)
             private_key: Optional EVM wallet private key for Polymarket trading.
                 When provided, orders are signed locally instead of server-side.
@@ -153,7 +153,7 @@ class SimmerClient:
                 environment variable (or deprecated SIMMER_PRIVATE_KEY fallback).
                 This allows existing skills/bots to use external wallets without code changes.
 
-                For Kalshi trading, use SIMMER_SOLANA_KEY env var instead (base58 format).
+                For Kalshi trading, use SOLANA_PRIVATE_KEY env var instead (base58 format).
 
                 SECURITY WARNING:
                 - Never log or print the private key
@@ -268,7 +268,7 @@ class SimmerClient:
 
     @property
     def solana_wallet_address(self) -> Optional[str]:
-        """Get the Solana wallet address (only available when SIMMER_SOLANA_KEY is set)."""
+        """Get the Solana wallet address (only available when SOLANA_PRIVATE_KEY is set)."""
         return self._solana_wallet_address
 
     @property
@@ -490,7 +490,7 @@ class SimmerClient:
                 - "simmer": Simmer LMSR, $SIM virtual currency
                 - "polymarket": Real Polymarket CLOB, USDC (requires linked wallet)
                 - "kalshi": Real Kalshi trading via DFlow, USDC on Solana
-                  (requires SIMMER_SOLANA_KEY env var with base58 secret key)
+                  (requires SOLANA_PRIVATE_KEY env var with base58 secret key)
                 - None: Use client's default venue
             order_type: Order type for Polymarket trades (default: "FAK").
                 - "FAK": Fill And Kill - fill what you can immediately, cancel rest (recommended for bots)
@@ -533,9 +533,9 @@ class SimmerClient:
             result = client.trade(market_id, "yes", 10.0)  # Signs locally
 
             # External wallet trading - Kalshi (local Solana signing)
-            # Set SIMMER_SOLANA_KEY env var to your base58 Solana secret key
+            # Set SOLANA_PRIVATE_KEY env var to your base58 Solana secret key
             import os
-            os.environ["SIMMER_SOLANA_KEY"] = "your_base58_secret_key"
+            os.environ["SOLANA_PRIVATE_KEY"] = "your_base58_secret_key"
             client = SimmerClient(api_key="sk_live_...", venue="kalshi")
             result = client.trade(market_id, "yes", 10.0)  # Signs locally with Solana key
         """
@@ -582,7 +582,7 @@ class SimmerClient:
             if signed_order:
                 payload["signed_order"] = signed_order
 
-        # Kalshi BYOW: sign transactions locally using SIMMER_SOLANA_KEY
+        # Kalshi BYOW: sign transactions locally using SOLANA_PRIVATE_KEY
         if effective_venue == "kalshi":
             return self._execute_kalshi_byow_trade(
                 market_id=market_id,
@@ -1514,12 +1514,12 @@ class SimmerClient:
         """
         Execute a Kalshi trade using BYOW (Bring Your Own Wallet).
 
-        Uses SIMMER_SOLANA_KEY environment variable for local signing.
+        Uses SOLANA_PRIVATE_KEY environment variable for local signing.
         The private key never leaves the local machine.
 
         Flow:
         1. Get unsigned transaction from Simmer API (via DFlow)
-        2. Sign locally using SIMMER_SOLANA_KEY
+        2. Sign locally using SOLANA_PRIVATE_KEY
         3. Submit signed transaction to Simmer API
 
         Args:
@@ -1541,7 +1541,7 @@ class SimmerClient:
                 market_id=market_id,
                 side=side,
                 error=(
-                    "SIMMER_SOLANA_KEY environment variable required for Kalshi trading. "
+                    "SOLANA_PRIVATE_KEY environment variable required for Kalshi trading. "
                     "Set it to your base58-encoded Solana secret key."
                 )
             )

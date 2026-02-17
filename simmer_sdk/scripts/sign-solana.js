@@ -9,7 +9,7 @@
  *   node sign-solana.js <base64_unsigned_tx>
  *
  * Environment:
- *   SIMMER_SOLANA_KEY - Base58-encoded Solana private key
+ *   SOLANA_PRIVATE_KEY - Base58-encoded Solana private key
  *
  * Output:
  *   Base64-encoded signed transaction (to stdout)
@@ -30,9 +30,9 @@ function main() {
   }
 
   // Get the private key from environment
-  const solanaKey = process.env.SIMMER_SOLANA_KEY;
+  const solanaKey = process.env.SOLANA_PRIVATE_KEY;
   if (!solanaKey) {
-    console.error('Error: SIMMER_SOLANA_KEY environment variable not set');
+    console.error('Error: SOLANA_PRIVATE_KEY environment variable not set');
     process.exit(1);
   }
 
@@ -42,7 +42,7 @@ function main() {
     try {
       secretKeyBytes = bs58.decode(solanaKey);
     } catch (e) {
-      console.error('Error: Invalid SIMMER_SOLANA_KEY format. Expected base58-encoded secret key.');
+      console.error('Error: Invalid SOLANA_PRIVATE_KEY format. Expected base58-encoded secret key.');
       process.exit(1);
     }
 
