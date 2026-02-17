@@ -341,8 +341,19 @@ class SimmerClient:
             if check.get("has_credentials"):
                 self._clob_creds_registered = True
                 return
-        except Exception:
-            pass  # Server might not have the endpoint yet — fall through to register
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response is not None else None
+            if status == 404:
+                pass  # Old server without the check endpoint — fall through to register
+            elif status in (401, 403, 429):
+                logger.warning("Credentials check returned %s — skipping re-registration", status)
+                return
+            else:
+                logger.warning("Credentials check failed (HTTP %s) — will attempt registration", status)
+        except requests.exceptions.ConnectionError:
+            logger.warning("Cannot reach server for credentials check — will attempt registration")
+        except Exception as e:
+            logger.debug("Credentials check failed unexpectedly: %s — will attempt registration", e)
 
         try:
             from py_clob_client.client import ClobClient
