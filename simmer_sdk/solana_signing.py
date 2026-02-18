@@ -123,6 +123,7 @@ def sign_solana_transaction(unsigned_tx_base64: str) -> str:
 
     try:
         from solders.transaction import VersionedTransaction
+        from solders.signature import Signature as SolanaSignature
     except ImportError as e:
         raise ImportError(
             f"Missing dependency for Solana signing: {e}. "
@@ -138,11 +139,40 @@ def sign_solana_transaction(unsigned_tx_base64: str) -> str:
 
     try:
         tx = VersionedTransaction.from_bytes(tx_bytes)
-        # VersionedTransaction is immutable in solders — sign the message bytes
-        # and reconstruct with populate(message, [signature])
-        signature = keypair.sign_message(bytes(tx.message))
-        signed_tx = VersionedTransaction.populate(tx.message, [signature])
+        message = tx.message
+
+        # Sign the serialized message bytes
+        signature = keypair.sign_message(bytes(message))
+
+        # Find our keypair's position among the required signers.
+        # In a VersionedTransaction, account_keys[0..num_required_signatures-1] are signers.
+        pubkey = keypair.pubkey()
+        account_keys = message.account_keys
+        num_required = message.header.num_required_signatures
+
+        signer_idx = None
+        for i in range(min(num_required, len(account_keys))):
+            if account_keys[i] == pubkey:
+                signer_idx = i
+                break
+
+        if signer_idx is None:
+            raise RuntimeError(
+                f"Keypair {pubkey} not found among required signers. "
+                f"Signers: {[str(account_keys[i]) for i in range(min(num_required, len(account_keys)))]}"
+            )
+
+        # Preserve any existing signatures (e.g., DFlow co-signatures).
+        # Only replace our own slot; leave all other slots intact.
+        existing_sigs = list(tx.signatures)
+        while len(existing_sigs) < num_required:
+            existing_sigs.append(SolanaSignature.default())
+        existing_sigs[signer_idx] = signature
+
+        signed_tx = VersionedTransaction.populate(message, existing_sigs)
         return base64.b64encode(bytes(signed_tx)).decode()
+    except RuntimeError:
+        raise
     except Exception as e:
         raise RuntimeError(f"Solana signing failed: {e}") from e
 
