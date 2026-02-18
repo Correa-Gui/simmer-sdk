@@ -343,10 +343,9 @@ Set `SOLANA_PRIVATE_KEY` to your base58-encoded Solana secret key:
 export SOLANA_PRIVATE_KEY=your_base58_secret_key_here
 ```
 
-> **Getting your Solana secret key:**
-> - **Phantom**: Settings → Security → Export Private Key
+> **Getting your Solana secret key:** Export from your wallet app:
+> - **Phantom**: Settings → Security & Privacy → Export Private Key
 > - **Solflare**: Settings → Export Private Key
-> - **CLI**: `solana-keygen pubkey ~/.config/solana/id.json` shows your address, the file contains the keypair
 
 #### 2. Register Your Wallet
 
