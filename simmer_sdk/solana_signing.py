@@ -124,6 +124,7 @@ def sign_solana_transaction(unsigned_tx_base64: str) -> str:
     try:
         from solders.transaction import VersionedTransaction
         from solders.signature import Signature as SolanaSignature
+        from solders.message import to_bytes_versioned
     except ImportError as e:
         raise ImportError(
             f"Missing dependency for Solana signing: {e}. "
@@ -141,8 +142,9 @@ def sign_solana_transaction(unsigned_tx_base64: str) -> str:
         tx = VersionedTransaction.from_bytes(tx_bytes)
         message = tx.message
 
-        # Sign the serialized message bytes
-        signature = keypair.sign_message(bytes(message))
+        # to_bytes_versioned returns the exact bytes Solana verifies signatures
+        # against — NOT the same as bytes(message) which is raw Rust serialization.
+        signature = keypair.sign_message(to_bytes_versioned(message))
 
         # Find our keypair's position among the required signers.
         # In a VersionedTransaction, account_keys[0..num_required_signatures-1] are signers.
