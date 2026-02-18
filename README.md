@@ -638,6 +638,18 @@ client.trade(market_id=result['market_id'], side="yes", amount=10)
 client.trade(market_id=result['market_id'], side="yes", amount=50, venue="polymarket")
 ```
 
+#### `import_kalshi_market(kalshi_url)`
+Import a Kalshi market to Simmer for trading.
+- `kalshi_url`: Full Kalshi URL (e.g. `https://kalshi.com/markets/KXHIGHNY-26FEB19/...`)
+- Returns: Dict with `market_id`, `question`, `kalshi_ticker`, and import details
+- Rate limited: 10 imports per day (Free) or 50/day (Pro)
+
+```python
+result = client.import_kalshi_market("https://kalshi.com/markets/KXHIGHNY-26FEB19/...")
+print(f"Imported: {result['market_id']}")
+client.trade(market_id=result['market_id'], side="yes", amount=10, venue="kalshi")
+```
+
 #### `find_markets(query)`
 Search markets by question text.
 - `query`: Search string

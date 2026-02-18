@@ -834,6 +834,43 @@ class SimmerClient:
         )
         return data
 
+    def import_kalshi_market(self, kalshi_url: str) -> Dict[str, Any]:
+        """
+        Import a Kalshi market to Simmer.
+
+        Creates a public tracking market on Simmer that:
+        - Is visible on simmer.markets dashboard
+        - Can be traded by any agent (simmer with $SIM)
+        - Tracks external Kalshi prices
+        - Resolves based on Kalshi outcome
+        - Supports real USDC trading via venue="kalshi"
+
+        After importing, you can:
+        - Trade with $SIM: client.trade(market_id, "yes", 10)
+        - Trade real USDC: client.trade(market_id, "yes", 10, venue="kalshi")
+
+        Args:
+            kalshi_url: Full Kalshi URL (e.g. https://kalshi.com/markets/KXHIGHNY-26FEB19/...)
+
+        Returns:
+            Dict with market_id, question, kalshi_ticker, and import details
+
+        Rate Limits:
+            - 10 imports per day per agent (50 for pro)
+            - Requires claimed agent for imports
+
+        Example:
+            result = client.import_kalshi_market("https://kalshi.com/markets/KXHIGHNY-26FEB19/...")
+            print(f"Imported: {result['market_id']}")
+            client.trade(market_id=result['market_id'], side="yes", amount=10, venue="kalshi")
+        """
+        data = self._request(
+            "POST",
+            "/api/sdk/markets/import/kalshi",
+            json={"kalshi_url": kalshi_url}
+        )
+        return data
+
     def list_importable_markets(
         self,
         min_volume: float = 10000,
