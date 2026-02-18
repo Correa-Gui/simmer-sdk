@@ -138,8 +138,11 @@ def sign_solana_transaction(unsigned_tx_base64: str) -> str:
 
     try:
         tx = VersionedTransaction.from_bytes(tx_bytes)
-        tx.sign([keypair], tx.message.recent_blockhash)
-        return base64.b64encode(bytes(tx)).decode()
+        # VersionedTransaction is immutable in solders — sign the message bytes
+        # and reconstruct with populate(message, [signature])
+        signature = keypair.sign_message(bytes(tx.message))
+        signed_tx = VersionedTransaction.populate(tx.message, [signature])
+        return base64.b64encode(bytes(signed_tx)).decode()
     except Exception as e:
         raise RuntimeError(f"Solana signing failed: {e}") from e
 
