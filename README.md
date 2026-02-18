@@ -331,28 +331,16 @@ result = client.trade(
 
 ## Kalshi Trading (Solana)
 
-Trade on Kalshi markets using your own Solana wallet. Orders are signed locally and executed via DFlow.
+Trade Kalshi prediction markets via DFlow on Solana. Requires a Pro plan. The SDK handles the full quote → sign → submit flow locally — no Node.js required.
 
 ### Setup
 
-#### 1. Install Node.js Dependencies
-
-Kalshi signing requires Node.js (for Solana transaction signing):
-
-```bash
-cd /path/to/simmer-sdk
-npm install
-```
-
-This installs `@solana/web3.js` and `bs58` for local signing.
-
-#### 2. Configure Your Solana Wallet
+#### 1. Configure Your Solana Wallet
 
 Set `SOLANA_PRIVATE_KEY` to your base58-encoded Solana secret key:
 
 ```bash
-# In your .env or config.yaml
-SOLANA_PRIVATE_KEY=your_base58_secret_key_here
+export SOLANA_PRIVATE_KEY=your_base58_secret_key_here
 ```
 
 > **Getting your Solana secret key:**
@@ -360,55 +348,66 @@ SOLANA_PRIVATE_KEY=your_base58_secret_key_here
 > - **Solflare**: Settings → Export Private Key
 > - **CLI**: `solana-keygen pubkey ~/.config/solana/id.json` shows your address, the file contains the keypair
 
+#### 2. Register Your Wallet
+
+Link your Solana public address to your Simmer account:
+
+```bash
+curl -X PATCH https://api.simmer.markets/api/sdk/user/settings \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"bot_solana_wallet": "YourSolanaPublicAddress"}'
+```
+
 #### 3. Fund Your Wallet
 
 Your Solana wallet needs:
-- **USDC**: For trading (Solana USDC, not Polygon USDC.e)
-- **SOL**: For transaction fees (~0.01 SOL per trade)
+- **USDC**: Trading capital (Solana USDC, not Polygon USDC.e)
+- **SOL**: Transaction fees (~0.01 SOL per trade)
 
-#### 4. Trade
+#### 4. Complete KYC (for buys)
+
+Buying requires identity verification via Proof. Sells do not require KYC.
+
+Verify at: `https://dflow.net/proof`
+
+#### 5. Trade
 
 ```python
-import os
-os.environ["SOLANA_PRIVATE_KEY"] = "your_base58_secret_key"
-
 from simmer_sdk import SimmerClient
-
+# SOLANA_PRIVATE_KEY env var must be set
 client = SimmerClient(api_key="sk_live_...", venue="kalshi")
 
 # Get Kalshi markets
 markets = client.get_markets(import_source="kalshi")
 
-# Trade - signing happens locally, key never leaves your machine
-result = client.trade(market_id=markets[0].id, side="yes", amount=10.0)
-print(f"Trade executed: {result.trade_id}")
+# Buy
+result = client.trade(market_id=markets[0].id, side="yes", amount=10.0, action="buy")
+
+# Sell
+result = client.trade(market_id=markets[0].id, side="yes", shares=5.0, action="sell")
 ```
 
 ### How It Works
 
-1. SDK requests unsigned transaction from Simmer (via DFlow)
-2. SDK signs transaction locally using your `SOLANA_PRIVATE_KEY`
+1. SDK requests unsigned Solana transaction from Simmer (via DFlow)
+2. SDK signs transaction locally using `SOLANA_PRIVATE_KEY` (pure Python, uses `solders`)
 3. SDK submits signed transaction through Simmer
 4. Transaction executes on Solana
 
-**Your private key never leaves your machine** - only the signed transaction is sent to Simmer.
-
-### Security
-
-- **Key storage**: Use environment variables or secret managers, never hardcode
-- **Key format**: Base58-encoded 64-byte Solana secret key
-- **Signing**: Done locally via Node.js (`@solana/web3.js`)
-- **Transmission**: Only signed transactions are sent to Simmer
+**Your private key never leaves your machine** — only the signed transaction is sent to Simmer.
 
 ### Troubleshooting
 
 | Error | Cause | Solution |
 |-------|-------|----------|
 | `SOLANA_PRIVATE_KEY env var required` | Key not set | Set env var with base58 secret key |
-| `Node.js is required for Solana signing` | Node.js not installed | Install Node.js 16+ |
-| `Solana signing script not found` | Missing npm install | Run `npm install` in SDK directory |
-| `Invalid key length` | Wrong key format | Use base58 secret key (64 bytes) |
+| `Transaction did not pass signature verification` | Outdated SDK | Run `pip install simmer-sdk --upgrade` |
+| `Invalid account owner` | Wallet has no USDC | Send USDC to wallet on Solana mainnet |
+| `Invalid key length` | Wrong key format | Use base58 secret key (32 or 64 bytes) |
 | `Market missing Kalshi ticker` | Not a Kalshi market | Filter with `import_source="kalshi"` |
+| `No Solana wallet linked` | Wallet not registered | Register via `PATCH /api/sdk/user/settings` |
+| `Kalshi SDK trading requires a Pro plan` | Not on Pro | Contact support for Pro access |
 
 ## Installation
 
